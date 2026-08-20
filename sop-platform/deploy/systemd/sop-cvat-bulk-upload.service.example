@@ -1,0 +1,15 @@
+[Unit]
+Description=Ningbo SOP resumable CVAT bulk video upload
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/xjai/micromamba/envs/sop/bin/python "/path/to/sop-platform/scripts/upload_all_videos_to_cvat.py" --source-root "/path/to/视频数据" --project-id 5 --token-file "/path/to/sop-platform/runtime/cvat_team_token" --state "/path/to/sop-platform/runtime/cvat_bulk_upload_state.jsonl" --proxy-root "/path/to/sop-platform/runtime/cvat_proxies"
+Restart=on-failure
+RestartSec=20
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target
