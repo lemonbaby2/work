@@ -79,6 +79,14 @@ def create_task(session: requests.Session, api_url: str, project_id: int, name: 
     return int(response.json()["id"])
 
 
+def task_has_data(session: requests.Session, api_url: str, task_id: int) -> bool:
+    response = session.get(f"{api_url}/api/tasks/{task_id}/data/meta", timeout=30)
+    if response.status_code == 400:
+        return False
+    response.raise_for_status()
+    return int(response.json().get("size") or 0) > 0
+
+
 def upload_video(session: requests.Session, api_url: str, task_id: int, video: Path) -> None:
     with video.open("rb") as handle:
         response = session.post(
@@ -164,6 +172,10 @@ def main() -> None:
             continue
         task_id = old.get("task_id")
         try:
+            if task_id and task_has_data(session, api_url, int(task_id)):
+                append_state(args.state, {**base, "status": "submitted", "task_id": int(task_id), "message": "CVAT 已有完整视频数据，断点恢复时不重复上传"})
+                submitted_signatures[signature] = source_key
+                continue
             if not task_id:
                 relative_name = str(source.relative_to(args.source_root)).replace("/", "｜")
                 task_id = create_task(session, api_url, args.project_id, f"SOP-{index:04d}｜{relative_name}")
