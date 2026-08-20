@@ -13,4 +13,5 @@ sqlalchemy>=2.0
 psycopg[binary]>=3.2
 onnx>=1.16
 onnxruntime>=1.18
+python-docx>=1.1
 git+https://github.com/ultralytics/CLIP.git

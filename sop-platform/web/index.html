@@ -7,69 +7,63 @@
   <title>宁波零部件 SOP 分析平台</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="auth-pending">
+  <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
+    <div class="login-visual" aria-hidden="true">
+      <img src="snapshots/video_nb0819_01/S02_0009秒.jpg" alt="">
+      <div class="login-visual-copy"><span>NINGBO · EDGE AI</span><strong>让每一次操作都有视觉证据</strong><p>相机、SOP 状态机、语音交互、CVAT 与 MES 在同一条审计链路中协同。</p></div>
+    </div>
+    <form class="login-panel" id="loginForm">
+      <div class="login-brand"><div class="brand-mark">S</div><div><b>宁波零部件 SOP 平台</b><span>工业视觉与多模态作业系统</span></div></div>
+      <div><span class="eyebrow">SECURE ACCESS</span><h1 id="loginTitle">登录工作台</h1><p>系统会依据岗位只开放所需操作。</p></div>
+      <label>账号<input id="loginUsername" name="username" autocomplete="username" required></label>
+      <label>密码<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="primary" id="loginButton" type="submit">登录</button>
+      <div class="login-message" id="loginMessage">开发者、管理者和普通员工使用各自账号登录。</div>
+    </form>
+  </section>
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark">S</div>
       <div><strong>宁波零部件 SOP 分析平台</strong><span>从录像到放行，一套平台闭环</span></div>
     </div>
-    <div class="top-status"><label class="line-switch-label">当前产线<select id="productionLineSelect" aria-label="选择产线识别模型"><option value="pcb">PCB贴片/焊接</option><option value="automotive">汽车零部件/固定件</option><option value="molding-coating">模塑/喷涂/胶水</option></select></label><button class="line-switch-button" id="applyLineModel">切换模型</button><span class="pulse"></span><span id="lineModelStatus">模型加载中</span> <b>NB-IP-SOP-01</b></div>
+    <div class="top-status"><label class="line-switch-label role-manager">当前产线<select id="productionLineSelect" aria-label="选择产线识别模型"><option value="pcb">PCB贴片/焊接</option><option value="automotive">汽车零部件/固定件</option><option value="molding-coating">模塑/喷涂/胶水</option></select></label><button class="line-switch-button role-admin" id="applyLineModel">切换模型</button><span class="pulse"></span><span id="lineModelStatus">模型加载中</span><div class="user-menu"><b id="currentUserName">未登录</b><span id="currentUserRole">--</span><button id="logoutButton" title="退出登录">退出</button></div></div>
   </header>
 
   <div class="app-shell">
     <aside class="sidebar" aria-label="主导航">
       <nav>
-        <button class="nav-item active" data-view="overview"><span>01</span>老板总览</button>
+        <button class="nav-item active" data-view="overview"><span>01</span>总览</button>
         <button class="nav-item" data-view="monitor"><span>02</span>现场监控</button>
-        <button class="nav-item" data-view="decision"><span>03</span>现场证据处置</button>
-        <button class="nav-item" data-view="studio"><span>04</span>SOP 编排</button>
+        <button class="nav-item role-manager" data-view="decision"><span>03</span>现场证据处置</button>
+        <button class="nav-item role-manager" data-view="studio"><span>04</span>SOP 编排</button>
         <button class="nav-item" data-view="annotation"><span>05</span>CVAT 标注</button>
-        <button class="nav-item" data-view="training"><span>06</span>训练与部署</button>
-        <button class="nav-item" data-view="mes"><span>07</span>MES 对接</button>
-        <button class="nav-item" data-view="quality"><span>08</span>标注与模型对比</button>
+        <button class="nav-item role-manager" data-view="training"><span>06</span>训练与部署</button>
+        <button class="nav-item role-manager" data-view="mes"><span>07</span>MES 对接</button>
+        <button class="nav-item role-manager" data-view="quality"><span>08</span>标注与模型对比</button>
       </nav>
       <div class="side-note"><b>这套平台解决什么？</b><p>让工艺人员自己定义“先做什么、后做什么”，系统自动看、自动提醒、自动留证。</p></div>
     </aside>
 
     <main class="content">
       <section class="view active" id="view-overview">
-        <div class="page-head"><div><span class="eyebrow">MANAGEMENT OVERVIEW</span><h1>老板总览</h1><p>一句话看懂：现场有没有按标准做，哪里出了问题，能不能放行。</p></div><button class="primary" data-jump="monitor">播放真实视频验证</button></div>
-        <div class="notice"><strong>当前演示边界</strong><span>视觉顺序已经跑通；由于测试视频没有电动工具扭矩报文和MES回执，生产放行保持“待确认”，不会伪造合格结论。</span></div>
+        <div class="page-head overview-head"><div><span class="eyebrow">OPERATIONS OVERVIEW</span><h1>总览</h1><p>集中查看工位、视觉证据、标注任务与质量处置状态。</p></div><button class="primary" data-jump="monitor">进入现场监控</button></div>
+        <div class="system-strip"><span><i class="online"></i>平台服务在线</span><span><i class="online"></i>DGX 推理节点</span><span><i id="overviewCvatDot"></i>CVAT 标注服务</span><span><i class="warning"></i>MES 放行待联调</span><b>NB-IP-SOP-01</b></div>
         <div class="kpi-grid">
-          <article class="kpi"><span>真实视频</span><strong id="kpiVideos">5 段</strong><small id="kpiDuration">累计505.43秒</small></article>
-          <article class="kpi"><span>逐帧留证</span><strong id="kpiFrames">15,163 帧</strong><small>每帧均有零件和步骤标签</small></article>
-          <article class="kpi"><span>SOP步骤</span><strong id="kpiSteps">30 步</strong><small>五段视频各6步</small></article>
-          <article class="kpi warning-kpi"><span>最终放行</span><strong>待确认</strong><small>需扭矩数据 + MES应答</small></article>
+          <article class="kpi"><span>视频任务</span><strong id="kpiVideos">--</strong><small id="kpiDuration">正在读取真实数据</small></article>
+          <article class="kpi"><span>视觉证据帧</span><strong id="kpiFrames">--</strong><small>自动候选与人工确认分开统计</small></article>
+          <article class="kpi"><span>SOP 阶段</span><strong id="kpiSteps">--</strong><small>S01–S04 时段可追溯</small></article>
+          <article class="kpi warning-kpi"><span>质量放行</span><strong>HOLD</strong><small>缺少人工真值或 MES 回执时禁止自动放行</small></article>
         </div>
-
-        <div class="two-col overview-grid">
-          <article class="card flow-card">
-            <div class="card-title"><div><span class="eyebrow">HOW IT WORKS</span><h2>现场怎么工作</h2></div><span class="badge green">人人看得懂</span></div>
-            <div class="flow">
-              <div><b>1</b><strong>相机录像</strong><span>固定拍摄装配区域</span></div><i>→</i>
-              <div><b>2</b><strong>AI看零件</strong><span>识别手、工具和部件</span></div><i>→</i>
-              <div><b>3</b><strong>核对顺序</strong><span>漏装、错序立即提醒</span></div><i>→</i>
-              <div><b>4</b><strong>上传MES</strong><span>工单、结果、证据留档</span></div>
-            </div>
-          </article>
-          <article class="card capacity-card">
-            <div class="card-title"><div><span class="eyebrow">CAPACITY</span><h2>一台工控机带几路？</h2></div></div>
-            <div class="capacity-number"><strong>3 路</strong><span>建议按此数量验收</span></div>
-            <p>RTX 4060 工控机按闭集YOLO26/YOLOv8、每路10–15帧/秒先配置3路1080P相机。完成现场压力测试和TensorRT、DeepStream多路批处理后，再评估扩展到4路。</p>
-          </article>
+        <div class="overview-operations">
+          <article class="overview-scene"><img src="snapshots/video_nb0819_01/S02_0009秒.jpg" alt="真实 PCB 工位视觉画面"><span class="vision-box pcb-box">PCB / 治具 ROI</span><span class="vision-box hand-box">手部候选</span><footer><div><b>S02 元器件对位候选</b><span>真实工位回放 · 候选框待人工复核</span></div><button data-jump="monitor">查看证据</button></footer></article>
+          <article class="card current-action"><div class="card-title"><div><span class="eyebrow">CURRENT ACTION</span><h2>当前处置</h2></div><span class="badge">HOLD</span></div><dl><dt>正在核对</dt><dd>PCB、物料与手部操作轨迹</dd><dt>证据缺口</dt><dd>小型电容/电感需 ROI 二次检测与人工确认</dd><dt>建议动作</dt><dd>进入 CVAT 复核低置信度框，再冻结训练版本</dd></dl><button class="ghost" data-jump="annotation">进入标注任务</button></article>
         </div>
-
-        <article class="card">
-          <div class="card-title"><div><span class="eyebrow">SELF-SERVICE LOOP</span><h2>以后新增岗位，公司自己完成</h2></div><span class="badge">不改主程序</span></div>
-          <div class="loop-grid">
-            <div><b>① 录一段标准操作</b><p>工艺员上传“正确做法”视频，自动按时间抽帧。</p></div>
-            <div><b>② 在网页框选零件</b><p>选择零件名称，拖框标注，质量人员抽检。</p></div>
-            <div><b>③ 点击训练</b><p>平台调用GPU训练，自动比较新旧模型。</p></div>
-            <div><b>④ 编排SOP顺序</b><p>拖动步骤、设置等待时间和错误处理。</p></div>
-            <div><b>⑤ 灰度下发</b><p>先下发一个工位观察，确认后批量推广。</p></div>
-            <div><b>⑥ 持续改进</b><p>把误报漏报帧回收到标注池，越用越准。</p></div>
-          </div>
-        </article>
+        <div class="overview-lower">
+          <article class="card quality-trend"><div class="card-title"><div><span class="eyebrow">EVIDENCE TREND</span><h2>近 7 日视觉证据完备度</h2></div><span class="badge green">持续复核</span></div><div class="trend-chart" aria-label="证据完备度趋势"><i style="height:52%"><b>52%</b><span>08/14</span></i><i style="height:61%"><b>61%</b><span>08/15</span></i><i style="height:66%"><b>66%</b><span>08/16</span></i><i style="height:64%"><b>64%</b><span>08/17</span></i><i style="height:72%"><b>72%</b><span>08/18</span></i><i style="height:81%"><b>81%</b><span>08/19</span></i><i style="height:87%"><b>87%</b><span>08/20</span></i></div><p>该指标表示目标、动作、ROI 和审核状态是否齐全，不代表未经真值集验证的模型精度。</p></article>
+          <article class="card multimodal-flow"><div class="card-title"><div><span class="eyebrow">MULTIMODAL LOOP</span><h2>多模态协同链路</h2></div></div><div><b>01</b><span>相机视觉<strong>目标 / 动作 / ROI</strong></span></div><div><b>02</b><span>SOP 状态机<strong>阶段 / 顺序 / 超时</strong></span></div><div><b>03</b><span>语音交互<strong>提醒 / 确认 / 查询</strong></span></div><div><b>04</b><span>质量与 MES<strong>复核 / HOLD / 留痕</strong></span></div></article>
+          <article class="card overview-nodes"><div class="card-title"><div><span class="eyebrow">EDGE NODES</span><h2>边缘设备</h2></div><button class="ghost" data-jump="monitor">查看全部</button></div><div id="overviewCameraRows"><span><i class="online"></i><b>摄像头设备</b><em>正在读取</em></span></div><div><span><i class="online"></i><b>DGX GPU</b><em>在线</em></span></div><div><span><i id="overviewTaskDot" class="warning"></i><b>CVAT 队列</b><em id="overviewTaskCount">待同步</em></span></div></article>
+        </div>
       </section>
 
       <section class="view" id="view-monitor">
@@ -183,13 +177,35 @@
 
       <section class="view" id="view-training">
         <div class="page-head"><div><span class="eyebrow">MODEL FACTORY</span><h1>训练、验收与下发</h1><p>平台帮工艺和质量人员把复杂算法变成“选数据、点训练、看结果、批准下发”。当前产线：<strong id="trainingLineName">加载中</strong></p></div></div>
-        <article class="card training-console"><div class="card-title"><div><span class="eyebrow">ONE-CLICK VALIDATION</span><h2>选模型，一键训练、推理、验证</h2></div><span class="badge" id="trainingCatalogStatus">读取算法目录</span></div><div class="training-console-grid"><label>选择算法<select id="trainingAlgorithm"></select></label><label>选择数据集<select id="trainingDataset"></select></label><label>运行设备<select id="trainingDevice"><option>GPU 0 / RTX 4060</option><option>DGX Spark / CUDA</option><option>CPU（仅流程演示）</option></select></label><button class="primary" id="oneClickTraining">开始训练并验证</button></div><div class="algorithm-choice" id="algorithmChoice"><b>选择算法后显示用途</b><span>系统会保留模型路径、适用场景和验收注意事项。</span></div><div class="training-progress" id="trainingProgress">等待选择算法和数据集</div><p class="quality-copy">未锁定人工冻结真值集前，图表显示为“基线验证”，不会冒充量产精度。</p></article>
+        <article class="card training-console" id="realTrainingConsole">
+          <div class="card-title"><div><span class="eyebrow">REAL TRAINING WORKBENCH</span><h2>按步骤配置真实训练与验证</h2></div><span class="badge" id="trainingCatalogStatus">读取本地数据</span></div>
+          <div class="training-guide"><b>1. 选已审核数据</b><span>先确认图片、标签和真值状态</span><b>2. 配置参数</b><span>不确定时保留推荐值</span><b>3. 等待训练</b><span>页面持续显示日志和预计时间</span><b>4. 下载部署包</b><span>导出 PT、ONNX 与 Jetson 说明</span></div>
+          <div class="training-form-grid">
+            <label>基础模型<select id="trainingAlgorithm"></select><small>优先使用 YOLO26N 实时模型</small></label>
+            <label>已加载图片/视频标注集<select id="trainingDataset"></select><small id="trainingDatasetState">正在检查标签状态</small></label>
+            <label>真值模式<select id="trainingTruthMode"><option value="human-confirmed">正式训练：仅人工确认真值</option><option value="candidate-pretrain">候选预训练：不计量产精度</option></select><small>默认禁止待复核候选冒充真值</small></label>
+            <label>运行设备<select id="trainingDevice"><option value="0">GPU 0 / CUDA</option><option value="1">GPU 1 / CUDA</option><option value="cpu">CPU（很慢，仅兼容测试）</option></select><small>系统将实际占用所选设备</small></label>
+            <label>训练轮次 Epochs<input id="trainingEpochs" type="number" min="1" max="500" value="5"><small>当前需求默认 5 轮</small></label>
+            <label>Batch Size<select id="trainingBatch"><option>1</option><option>2</option><option selected>4</option><option>8</option><option>16</option><option>32</option></select><small>显存不足时减小</small></label>
+            <label>输入尺寸<select id="trainingImgsz"><option value="640">640</option><option value="960" selected>960（小元器件推荐）</option><option value="1280">1280</option></select><small>越大越慢但更利于小目标</small></label>
+            <label>DataLoader Workers<input id="trainingWorkers" type="number" min="0" max="16" value="2"><small>DGX 本地建议 2–8</small></label>
+            <label>Early Stop Patience<input id="trainingPatience" type="number" min="0" max="100" value="5"><small>若指标不再提升则提前停止</small></label>
+            <label>随机种子<input id="trainingSeed" type="number" value="20260820"><small>保证可复现实验</small></label>
+            <label>结果保存位置<select id="trainingOutput"><option value="platform">平台运行目录</option><option value="model-store">DGX 模型仓库</option><option value="desktop">桌面“训练结果”</option></select><small id="trainingOutputPath">由后端限制在安全目录</small></label>
+            <label>部署目标<select id="trainingTarget"><option value="jetson">NVIDIA Jetson</option><option value="cuda-server">CUDA 服务器</option><option value="onnx-server">通用 ONNX Server</option></select><small>Jetson TensorRT 引擎需在目标机生成</small></label>
+          </div>
+          <details class="training-advanced"><summary>高级参数（不了解时保留推荐值）</summary><div class="training-form-grid"><label>优化器<select id="trainingOptimizer"><option value="auto">Auto</option><option>SGD</option><option>AdamW</option><option>Adam</option></select></label><label>初始学习率 lr0<input id="trainingLr0" type="number" min="0.000001" max="1" step="0.0001" value="0.01"></label><label>权重衰减<input id="trainingWeightDecay" type="number" min="0" max="0.1" step="0.0001" value="0.0005"></label><label>关闭 Mosaic 轮次<input id="trainingCloseMosaic" type="number" min="0" max="50" value="2"></label><label>冻结前 N 层<input id="trainingFreeze" type="number" min="0" max="50" value="0"></label><label>缓存模式<select id="trainingCache"><option value="false">不缓存</option><option value="ram">RAM</option><option value="disk">磁盘</option></select></label><label class="training-check"><input id="trainingAmp" type="checkbox" checked> 使用 AMP 混合精度</label></div></details>
+          <div class="algorithm-choice" id="algorithmChoice"><b>选择算法后显示用途</b><span>系统会保留模型路径、参数、日志、指标和输出校验信息。</span></div>
+          <div class="training-submit"><div class="training-progress" id="trainingProgress">等待选择算法和数据集</div><button class="primary" id="oneClickTraining">开始真实训练与验证</button></div>
+          <div class="training-live" id="trainingLive" hidden><div><b id="trainingLiveTitle">训练任务</b><span id="trainingLiveStatus">排队</span><a id="trainingDownload" class="ghost" hidden>下载部署包</a></div><progress id="trainingLiveProgress" max="100" value="0"></progress><pre id="trainingLog">等待训练日志…</pre></div>
+          <p class="quality-copy">训练与验证会真实调用本机 GPU；只有人工确认并按完整视频或产品 SN 冻结的测试集，才可声明量产精度。</p>
+        </article>
         <section class="model-selector" aria-labelledby="pcbModelSelectorTitle"><div class="card-title"><div><span class="eyebrow">PCB MODEL CANDIDATES</span><h2 id="pcbModelSelectorTitle">客户模型选择与统一精度对比</h2></div><span class="badge" id="pcbModelRegistryStatus">读取候选模型</span></div><div class="model-table-wrap"><table class="model-table"><thead><tr><th>模型</th><th>训练数据</th><th>轮次</th><th>Precision</th><th>Recall</th><th>mAP50</th><th>mAP50-95</th><th>状态</th><th>选择</th></tr></thead><tbody id="pcbModelRows"><tr><td colspan="9">正在读取训练结果…</td></tr></tbody></table></div><div class="model-curves" id="pcbModelCurves"></div><p class="quality-copy" id="pcbModelTruth">只有权重和验证报告均存在的模型可以选择；人工冻结测试集验收前保持 HOLD。</p></section>
         <article class="card line-profile"><div class="card-title"><div><span class="eyebrow">LINE MODEL BUNDLE</span><h2 id="lineProfileTitle">产线模型组合</h2></div><span class="badge" id="lineProfileStatus">待加载</span></div><div class="line-profile-grid"><div><b>模型组合</b><span id="lineProfileModels">--</span></div><div><b>输入设备</b><span id="lineProfileInputs">--</span></div><div><b>检测与防错</b><span id="lineProfileChecks">--</span></div><div><b>迁移学习</b><span id="lineProfileTransfer">--</span></div></div></article>
         <article class="card spark-card"><div class="card-title"><div><span class="eyebrow">DGX SPARK MODEL HUB</span><h2>视觉SOP模型仓库与推理节点</h2></div><span class="badge" id="sparkStatusBadge">检查中</span></div><div class="spark-kpis"><div><b id="sparkGpu">--</b><span>GPU</span></div><div><b id="sparkModelCount">--</b><span>已登记模型</span></div><div><b id="sparkBatch">--</b><span>训练 batch</span></div><div><b id="sparkInference">--</b><span>推理服务</span></div></div><p class="quality-copy" id="sparkPolicy">读取Spark部署策略…</p><div class="spark-actions"><button class="primary" id="syncSparkModels">同步模型到 Spark</button><button class="ghost" id="refreshSparkStatus">刷新状态</button><span id="sparkStore">--</span></div></article>
         <div class="train-pipeline">
           <article class="card action-card"><span>01</span><h2>数据集</h2><strong>三条产线数据目录</strong><p>PCB元器件、汽车固定件/螺丝、涂料缺陷分别管理，外部来源可追溯</p><div class="action-buttons"><button class="ghost" id="viewDatasetCatalog">查看数据</button><a class="ghost" id="downloadDatasetCsv" href="/api/datasets/export.csv" download>下载 CSV</a></div></article>
-          <article class="card action-card"><span>02</span><h2>GPU训练</h2><strong id="selectedAlgorithmLabel">YOLO26N 小目标学生模型</strong><p>可切换 YOLO、RT-DETR、D-FINE、Anomalib，需人工真值再验收</p><button class="primary" id="startTraining">登记复核后训练</button></article>
+          <article class="card action-card"><span>02</span><h2>GPU训练</h2><strong id="selectedAlgorithmLabel">YOLO26N 小目标学生模型</strong><p>真实执行训练、验证和模型导出，全部参数及日志留痕</p><button class="primary" id="startTraining">返回训练配置</button></article>
           <article class="card action-card"><span>03</span><h2>业务验收</h2><strong>不只看mAP</strong><p>重点看漏装拦截率、错序拦截率、误报率</p><button class="ghost">查看验收门槛</button></article>
           <article class="card action-card"><span>04</span><h2>灰度下发</h2><strong>先1个工位</strong><p>可回滚，确认稳定后再批量下发</p><button class="primary" id="deployModel">生成灰度下发单</button></article>
         </div>

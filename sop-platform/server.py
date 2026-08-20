@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import base64
 import csv
+import hashlib
+import hmac
 import importlib.util
 import io
 import math
 import mimetypes
 import os
+import secrets
 import shutil
 import socket
 import sqlite3
@@ -60,6 +63,30 @@ CAMERA_SLOT_COUNT = max(1, int(os.getenv("SOP_CAMERA_COUNT", "8")))
 ANNOTATION_DB_PATH = Path(os.getenv("SOP_ANNOTATION_DB", str(RUNTIME_ROOT / "sop_annotations.sqlite3")))
 ANNOTATION_DB_LOCK = threading.RLock()
 CAMERA_INFERENCE_GATE = threading.BoundedSemaphore(max(1, int(os.getenv("SOP_CAMERA_GPU_CONCURRENCY", "1"))))
+AUTH_SESSION_SECONDS = max(900, int(os.getenv("SOP_AUTH_SESSION_SECONDS", "28800")))
+ROLE_LABELS = {"admin": "开发者", "manager": "管理者", "worker": "普通员工"}
+ROLE_VIEWS = {
+    "admin": ["overview", "monitor", "decision", "studio", "annotation", "training", "mes", "quality"],
+    "manager": ["overview", "monitor", "decision", "studio", "annotation", "training", "mes", "quality"],
+    "worker": ["overview", "monitor", "annotation"],
+}
+
+
+def _password_hash(password: str, salt: bytes | None = None) -> str:
+    salt = salt or secrets.token_bytes(16)
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 310_000)
+    return f"pbkdf2_sha256$310000${salt.hex()}${derived.hex()}"
+
+
+def _password_matches(password: str, encoded: str) -> bool:
+    try:
+        name, rounds, salt_hex, digest_hex = encoded.split("$", 3)
+        if name != "pbkdf2_sha256":
+            return False
+        derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), int(rounds))
+        return hmac.compare_digest(derived.hex(), digest_hex)
+    except (TypeError, ValueError):
+        return False
 
 
 def annotation_db() -> sqlite3.Connection:
@@ -133,8 +160,92 @@ def initialize_annotation_db() -> None:
                 updated_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_cvat_tasks_created ON cvat_tasks(created_at DESC);
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin', 'manager', 'worker')),
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                last_login_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                session_id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
             """
         )
+        user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+        if user_count == 0:
+            credentials = []
+            now = time.strftime("%Y-%m-%d %H:%M:%S")
+            for username, display_name, role in (
+                ("admin", "系统开发者", "admin"),
+                ("manager", "生产管理者", "manager"),
+                ("worker", "现场员工", "worker"),
+            ):
+                password = secrets.token_urlsafe(12)
+                connection.execute(
+                    "INSERT INTO users(username, password_hash, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (username, _password_hash(password), display_name, role, now),
+                )
+                credentials.append(f"{ROLE_LABELS[role]}\t{username}\t{password}")
+            credential_path = RUNTIME_ROOT / "initial_credentials.txt"
+            credential_path.write_text(
+                "SOP平台首次登录账号（请登录后由开发者妥善保管并线下修改）\n\n" + "\n".join(credentials) + "\n",
+                encoding="utf-8",
+            )
+            credential_path.chmod(0o600)
+
+
+def authenticate_user(username: str, password: str) -> dict[str, object] | None:
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        row = connection.execute(
+            "SELECT user_id, username, password_hash, display_name, role FROM users WHERE username = ? AND active = 1",
+            (username,),
+        ).fetchone()
+        if row is None or not _password_matches(password, row["password_hash"]):
+            return None
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        connection.execute("UPDATE users SET last_login_at = ? WHERE user_id = ?", (now, row["user_id"]))
+        return {key: row[key] for key in ("user_id", "username", "display_name", "role")}
+
+
+def create_auth_session(user_id: int) -> str:
+    session_id = secrets.token_urlsafe(32)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (time.time(),))
+        connection.execute(
+            "INSERT INTO auth_sessions(session_id, user_id, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, user_id, time.time() + AUTH_SESSION_SECONDS, now, now),
+        )
+    return session_id
+
+
+def auth_user_for_session(session_id: str) -> dict[str, object] | None:
+    if not session_id:
+        return None
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        row = connection.execute(
+            """SELECT u.user_id, u.username, u.display_name, u.role
+               FROM auth_sessions s JOIN users u ON u.user_id = s.user_id
+               WHERE s.session_id = ? AND s.expires_at > ? AND u.active = 1""",
+            (session_id, time.time()),
+        ).fetchone()
+        if row is None:
+            return None
+        connection.execute(
+            "UPDATE auth_sessions SET last_seen_at = ?, expires_at = ? WHERE session_id = ?",
+            (time.strftime("%Y-%m-%d %H:%M:%S"), time.time() + AUTH_SESSION_SECONDS, session_id),
+        )
+        return {**{key: row[key] for key in row.keys()}, "role_label": ROLE_LABELS.get(row["role"], row["role"]), "views": ROLE_VIEWS.get(row["role"], [])}
 
 
 def db_upsert_annotation(annotation: dict) -> None:
@@ -517,6 +628,10 @@ def device_inventory() -> dict[str, object]:
         "camera_network_note": "USB/UVC 摄像头没有独立 IP；RTSP/HTTP 网络相机可写入 config/network_cameras.json。串口只用于控制和身份，不能承载视频。局域网客户端统一访问本采集主机。",
         "desktop_root": str(DESKTOP_ROOT),
         "camera_sources": camera_sources,
+        "insta360": {
+            "present": any("insta" in str(item.get("name", "")).lower() or "insta" in str(item.get("model", "")).lower() for item in videos),
+            "message": "影石设备已在 USB/UVC 总线上枚举" if any("insta" in str(item.get("name", "")).lower() or "insta" in str(item.get("model", "")).lower() for item in videos) else "未检测到影石 USB/UVC 枚举；请检查数据线、供电、UVC模式和扩展坞后点击重新扫描",
+        },
     }
 
 
@@ -1064,6 +1179,22 @@ class LiveCameraService:
 LIVE_CAMERAS = {camera_id: LiveCameraService(camera_id) for camera_id in range(CAMERA_SLOT_COUNT)}
 
 
+def refresh_camera_services() -> dict[int, str]:
+    """Re-scan hot-plugged UVC/network sources without disrupting running streams."""
+    discovered = _discover_camera_sources()
+    DEFAULT_CAMERA_SOURCES.clear()
+    DEFAULT_CAMERA_SOURCES.update(discovered)
+    for camera_id, service in LIVE_CAMERAS.items():
+        with service._lock:
+            if service._status.get("running"):
+                continue
+            configured = os.getenv(f"SOP_CAMERA_SOURCE_{camera_id}")
+            source = configured or discovered.get(camera_id, "")
+            service.source = source
+            service._status.update({"source": source, "error": None if source else "摄像头槽位尚未绑定设备"})
+    return discovered
+
+
 SOFTWARE_CHECKS = [
     ("OpenCV", "采集/ROI/图像处理", "cv2", None),
     ("Ultralytics YOLOv11", "GPU目标检测", "ultralytics", None),
@@ -1172,6 +1303,36 @@ def cvat_config() -> dict[str, object]:
     return {"url": url, "api_url": api_url, "token_configured": bool(token)}
 
 
+def cvat_bulk_status() -> dict[str, object]:
+    state_path = RUNTIME_ROOT / "cvat_bulk_upload_state.jsonl"
+    project = read_config(RUNTIME_ROOT / "cvat_bulk_project.json", {})
+    latest: dict[str, dict] = {}
+    for item in read_jsonl(state_path):
+        source = str(item.get("source") or "")
+        if source and source != "__batch__":
+            latest[source] = item
+    counts: dict[str, int] = {}
+    for item in latest.values():
+        status = str(item.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    config = cvat_config()
+    bulk_items = []
+    for item in sorted(latest.values(), key=lambda value: str(value.get("recorded_at", "")), reverse=True):
+        task_id = item.get("task_id")
+        if task_id is None:
+            continue
+        bulk_items.append({
+            "local_task_id": f"CVAT-BULK-{task_id}", "cvat_task_id": task_id,
+            "name": f"全量视频｜{item.get('relative') or Path(str(item.get('source'))).name}",
+            "dataset_id": "full-video-corpus", "line_id": "pcb", "mode": "bulk-video",
+            "status": item.get("status"), "url": f"{config['url']}/tasks/{task_id}",
+            "labels": [], "created_at": item.get("recorded_at", ""), "updated_at": item.get("recorded_at", ""),
+        })
+        if len(bulk_items) >= 50:
+            break
+    return {"project": project, "counts": counts, "total_seen": len(latest), "items": bulk_items, "state_path": str(state_path)}
+
+
 def probe_url(url: str) -> bool:
     try:
         with build_opener(ProxyHandler({})).open(url, timeout=0.8) as response:
@@ -1271,6 +1432,142 @@ DATASET_LOCAL_HINTS = {
     "automotive-fasteners": [ROOT / "datasets" / "新增两视频_YOLOE26_SAHI细粒度预标注_待人工复核", ROOT / "datasets" / "三视频多物体预标注_待人工复核"],
     "automotive-sop-ng": [DATA_ROOT],
 }
+
+TRAINING_OUTPUT_ROOTS = {
+    "platform": RUNTIME_ROOT / "training_jobs",
+    "model-store": SPARK_MODEL_ROOT / "training-runs",
+    "desktop": DESKTOP_ROOT / "训练结果",
+}
+
+
+def training_dataset_options() -> list[dict[str, object]]:
+    items = []
+    for dataset_id, candidates in DATASET_LOCAL_HINTS.items():
+        for root in candidates:
+            yaml_path = root / "data.yaml"
+            if not yaml_path.is_file():
+                continue
+            labels = sum(1 for _ in root.glob("labels/**/*.txt"))
+            images = sum(1 for extension in ("*.jpg", "*.jpeg", "*.png", "*.bmp") for _ in root.glob(f"images/**/{extension}"))
+            confirmed = (root / ".human_confirmed").is_file() and "待人工复核" not in root.name
+            items.append({
+                "id": f"{dataset_id}:{root.name}", "catalog_id": dataset_id, "name": root.name,
+                "data_yaml": str(yaml_path), "images": images, "labels": labels,
+                "truth_ready": confirmed, "truth_status": "人工真值已冻结" if confirmed else "自动候选/待人工复核",
+            })
+    return items
+
+
+def resolve_training_dataset(selection: str) -> dict[str, object]:
+    option = next((item for item in training_dataset_options() if item["id"] == selection), None)
+    if option is None:
+        raise ValueError("训练数据集不存在或没有 data.yaml")
+    return option
+
+
+def resolve_training_model(model_id: str) -> Path:
+    catalog = read_config(TRAINING_CATALOG_PATH, [])
+    entry = next((item for item in catalog if item.get("id") == model_id), None) if isinstance(catalog, list) else None
+    if entry is None:
+        raise ValueError("未知训练算法")
+    if model_id not in {"yolo26n", "yoloe26"}:
+        raise ValueError("当前真实训练执行器仅支持 Ultralytics YOLO26/YOLOE；其他算法需安装对应训练后端")
+    model_path = Path(str(entry.get("model_path") or ""))
+    if not model_path.is_absolute():
+        model_path = ROOT / model_path
+    if not model_path.is_file():
+        raise ValueError(f"预训练权重不存在: {model_path}")
+    return model_path
+
+
+def training_job_dirs() -> list[Path]:
+    roots = list(TRAINING_OUTPUT_ROOTS.values())
+    return [path for root in roots if root.exists() for path in root.iterdir() if path.is_dir() and (path / "status.json").is_file()]
+
+
+def training_job(job_id: str) -> dict[str, object] | None:
+    for path in training_job_dirs():
+        if path.name != job_id:
+            continue
+        status = read_config(path / "status.json", {})
+        log_path = path / "training.log"
+        if log_path.is_file():
+            try:
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                status["log_tail"] = lines[-80:]
+            except OSError:
+                status["log_tail"] = []
+        package = path / f"{job_id}_deployment.zip"
+        status["download_url"] = f"/api/train/jobs/{quote(job_id)}/download" if package.is_file() else None
+        return status
+    return None
+
+
+def start_training_job(payload: dict[str, object], operator: str) -> dict[str, object]:
+    dataset = resolve_training_dataset(str(payload.get("dataset") or ""))
+    truth_mode = str(payload.get("truth_mode") or "human-confirmed")
+    if truth_mode == "human-confirmed" and not dataset.get("truth_ready"):
+        raise ValueError("该数据集仍是自动候选，不能作为正式真值训练。请先在 CVAT 完成人工复核并冻结版本，或明确选择“候选预训练”。")
+    if truth_mode not in {"human-confirmed", "candidate-pretrain"}:
+        raise ValueError("未知真值模式")
+    model_id = str(payload.get("algorithm") or "yolo26n")
+    model_path = resolve_training_model(model_id)
+    epochs = max(1, min(500, int(payload.get("epochs", 5))))
+    batch = max(1, min(128, int(payload.get("batch", 4))))
+    imgsz = max(320, min(2048, int(payload.get("imgsz", 960))))
+    workers = max(0, min(16, int(payload.get("workers", 2))))
+    patience = max(0, min(100, int(payload.get("patience", min(20, epochs)))))
+    seed = int(payload.get("seed", 20260820))
+    optimizer = str(payload.get("optimizer") or "auto")
+    if optimizer not in {"auto", "SGD", "Adam", "AdamW", "NAdam", "RAdam", "RMSProp"}:
+        raise ValueError("未知优化器")
+    lr0 = max(0.000001, min(1.0, float(payload.get("lr0", 0.01))))
+    weight_decay = max(0.0, min(0.1, float(payload.get("weight_decay", 0.0005))))
+    close_mosaic = max(0, min(50, int(payload.get("close_mosaic", min(2, epochs)))))
+    freeze = max(0, min(50, int(payload.get("freeze", 0))))
+    amp = bool(payload.get("amp", True))
+    cache = str(payload.get("cache") or "false")
+    if cache not in {"false", "ram", "disk"}:
+        raise ValueError("缓存模式只允许 false、ram 或 disk")
+    device = str(payload.get("device") or "0")
+    if device not in {"0", "1", "cpu"}:
+        raise ValueError("运行设备只允许 GPU 0、GPU 1 或 CPU")
+    output_key = str(payload.get("output") or "platform")
+    output_root = TRAINING_OUTPUT_ROOTS.get(output_key)
+    if output_root is None:
+        raise ValueError("未知输出位置")
+    output_root.mkdir(parents=True, exist_ok=True)
+    job_id = f"TRAIN-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}"
+    job_dir = output_root / job_id
+    job_dir.mkdir()
+    image_count = int(dataset.get("images") or dataset.get("labels") or 0)
+    seconds_mid = max(90, int(max(1, image_count) * epochs * (imgsz / 640) ** 2 / (max(1, batch) * 5.5)))
+    status = {
+        "ok": True, "job_id": job_id, "status": "queued", "stage": "排队", "progress": 0,
+        "operator": operator, "algorithm": model_id, "model_path": str(model_path), "dataset": dataset,
+        "truth_mode": truth_mode, "parameters": {"epochs": epochs, "batch": batch, "imgsz": imgsz, "workers": workers, "patience": patience, "seed": seed, "device": device, "optimizer": optimizer, "lr0": lr0, "weight_decay": weight_decay, "close_mosaic": close_mosaic, "freeze": freeze, "amp": amp, "cache": cache},
+        "output_dir": str(job_dir), "target": str(payload.get("target") or "jetson"),
+        "estimated_seconds": seconds_mid, "estimated_range_seconds": [int(seconds_mid * 0.65), int(seconds_mid * 1.6)],
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "truth_notice": "human-confirmed 才可作为量产精度；candidate-pretrain 只衡量候选标签一致性。",
+    }
+    (job_dir / "status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    command = [
+        sys.executable, str(ROOT / "scripts" / "run_training_job.py"), "--job-dir", str(job_dir),
+        "--data", str(dataset["data_yaml"]), "--model", str(model_path), "--epochs", str(epochs),
+        "--batch", str(batch), "--imgsz", str(imgsz), "--device", device, "--workers", str(workers),
+        "--patience", str(patience), "--seed", str(seed), "--target", str(payload.get("target") or "jetson"),
+        "--truth-mode", truth_mode, "--optimizer", optimizer, "--lr0", str(lr0), "--weight-decay", str(weight_decay),
+        "--close-mosaic", str(close_mosaic), "--freeze", str(freeze), "--amp", "true" if amp else "false", "--cache", cache,
+    ]
+    log_handle = (job_dir / "training.log").open("a", encoding="utf-8")
+    process = subprocess.Popen(command, cwd=ROOT, stdout=log_handle, stderr=subprocess.STDOUT, start_new_session=True)
+    log_handle.close()
+    status["pid"] = process.pid
+    temporary = job_dir / "status.tmp"
+    temporary.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(job_dir / "status.json")
+    return status
 
 
 def dataset_catalog_with_status() -> list[dict[str, object]]:
@@ -1745,12 +2042,14 @@ class SOPHandler(SimpleHTTPRequestHandler):
             return f"{content_type}; charset=utf-8"
         return content_type
 
-    def send_json(self, payload: object, status: int = 200) -> None:
+    def send_json(self, payload: object, status: int = 200, headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -1800,9 +2099,52 @@ class SOPHandler(SimpleHTTPRequestHandler):
                     (filename, serialized, payload["recorded_at"]),
                 )
 
+    def auth_session_id(self) -> str:
+        cookie = self.headers.get("Cookie", "")
+        for item in cookie.split(";"):
+            name, separator, value = item.strip().partition("=")
+            if separator and name == "sop_session":
+                return value
+        return ""
+
+    def current_user(self) -> dict[str, object] | None:
+        return auth_user_for_session(self.auth_session_id())
+
+    def require_api_access(self, path: str, method: str) -> dict[str, object] | None:
+        user = self.current_user()
+        if user is None:
+            self.send_json({"ok": False, "message": "登录已失效，请重新登录"}, HTTPStatus.UNAUTHORIZED)
+            return None
+        role = str(user.get("role"))
+        admin_only = (
+            "/api/models/pcb/select", "/api/spark/sync-models", "/api/production-lines/select",
+        )
+        manager_prefixes = (
+            "/api/train", "/api/deploy", "/api/mes", "/api/decision", "/api/sop/save",
+            "/api/models", "/api/model-benchmark", "/api/training", "/api/spark", "/api/software",
+        )
+        if method == "POST" and path == "/api/annotations/review":
+            manager_prefixes = (*manager_prefixes, "/api/annotations/review")
+        if path.startswith(admin_only) and role != "admin":
+            self.send_json({"ok": False, "message": "该操作仅开发者可执行"}, HTTPStatus.FORBIDDEN)
+            return None
+        if path.startswith(manager_prefixes) and role not in {"admin", "manager"}:
+            self.send_json({"ok": False, "message": "该功能需要管理者或开发者权限"}, HTTPStatus.FORBIDDEN)
+            return None
+        return user
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/api/auth/status":
+            user = self.current_user()
+            self.send_json({"ok": True, "authenticated": bool(user), "user": user})
+            return
+        if path.startswith("/media/") and self.current_user() is None:
+            self.send_json({"ok": False, "message": "请登录后查看生产视频"}, HTTPStatus.UNAUTHORIZED)
+            return
+        if path.startswith("/api/") and path != "/api/health" and self.require_api_access(path, "GET") is None:
+            return
         if path == "/api/dashboard":
             self.send_json(json.loads((DATA_ROOT / "dashboard.json").read_text(encoding="utf-8")))
             return
@@ -1950,6 +2292,7 @@ class SOPHandler(SimpleHTTPRequestHandler):
             self.send_json({"status": "ok", "service": "宁波SOP分析平台", "time": time.time()})
             return
         if path == "/api/device/inventory":
+            refresh_camera_services()
             self.send_json(device_inventory())
             return
         if path == "/api/integrations":
@@ -1961,13 +2304,36 @@ class SOPHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/cvat/status":
             config = cvat_config()
-            self.send_json({"ok": True, **config, "available": probe_url(str(config["url"])), "tasks_url": f"{config['url']}/tasks"})
+            self.send_json({"ok": True, **config, "available": probe_url(str(config["url"])), "tasks_url": f"{config['url']}/tasks", "bulk": cvat_bulk_status()})
             return
         if path == "/api/cvat/tasks":
-            self.send_json({"ok": True, "items": db_cvat_tasks()})
+            bulk = cvat_bulk_status()
+            self.send_json({"ok": True, "items": bulk["items"] + db_cvat_tasks(), "bulk": bulk})
+            return
+        if path == "/api/train/jobs":
+            items = [read_config(job_dir / "status.json", {}) for job_dir in sorted(training_job_dirs(), key=lambda item: item.stat().st_mtime, reverse=True)[:30]]
+            self.send_json({"ok": True, "items": items})
+            return
+        if path.startswith("/api/train/jobs/"):
+            remainder = path.removeprefix("/api/train/jobs/")
+            job_id, separator, action = remainder.partition("/")
+            job = training_job(unquote(job_id))
+            if job is None:
+                self.send_json({"ok": False, "message": "训练任务不存在"}, HTTPStatus.NOT_FOUND)
+                return
+            if separator and action == "download":
+                package = Path(str(job.get("output_dir"))) / f"{job['job_id']}_deployment.zip"
+                self.send_file_download(package)
+            else:
+                self.send_json(job)
             return
         if path == "/api/training/catalog":
-            self.send_json({"ok": True, "algorithms": read_config(TRAINING_CATALOG_PATH, []), "datasets": dataset_catalog_with_status(), "production_lines": production_lines()})
+            self.send_json({
+                "ok": True, "algorithms": read_config(TRAINING_CATALOG_PATH, []),
+                "datasets": dataset_catalog_with_status(), "training_datasets": training_dataset_options(),
+                "production_lines": production_lines(),
+                "outputs": [{"id": key, "path": str(value)} for key, value in TRAINING_OUTPUT_ROOTS.items()],
+            })
             return
         if path == "/api/datasets/export.csv":
             dataset_id = parse_qs(parsed.query).get("dataset", [""])[0] or None
@@ -2057,6 +2423,33 @@ class SOPHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             payload = self.read_json()
+            if path == "/api/auth/login":
+                username = str(payload.get("username") or "").strip()
+                password = str(payload.get("password") or "")
+                user = authenticate_user(username, password)
+                if user is None:
+                    time.sleep(0.35)
+                    self.send_json({"ok": False, "message": "账号或密码错误"}, HTTPStatus.UNAUTHORIZED)
+                    return
+                session_id = create_auth_session(int(user["user_id"]))
+                full_user = auth_user_for_session(session_id)
+                self.send_json(
+                    {"ok": True, "message": "登录成功", "user": full_user},
+                    headers={"Set-Cookie": f"sop_session={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={AUTH_SESSION_SECONDS}"},
+                )
+                return
+            if path == "/api/auth/logout":
+                session_id = self.auth_session_id()
+                if session_id:
+                    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+                        connection.execute("DELETE FROM auth_sessions WHERE session_id = ?", (session_id,))
+                self.send_json(
+                    {"ok": True, "message": "已安全退出"},
+                    headers={"Set-Cookie": "sop_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"},
+                )
+                return
+            if path.startswith("/api/") and self.require_api_access(path, "POST") is None:
+                return
             if path == "/api/annotations":
                 required = {"video_time", "label", "box"}
                 if not required.issubset(payload):
@@ -2169,25 +2562,16 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": True, "message": "SOP草案已保存，旧版本已自动备份"})
                 return
             if path == "/api/train/start":
-                job_id = f"TRAIN-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}"
-                algorithm = str(payload.get("algorithm") or payload.get("model") or "YOLO26N")
-                dataset = str(payload.get("dataset") or "未选择数据集")
-                self.append_event("training_jobs.jsonl", {"job_id": job_id, "status": "待审核", "algorithm": algorithm, "dataset": dataset, "workflow": ["train", "infer", "validate", "test"], **payload})
-                self.send_json({"ok": True, "job_id": job_id, "algorithm": algorithm, "dataset": dataset, "workflow": ["train", "infer", "validate", "test"], "message": "一键训练任务已登记：训练、推理、验证、测试完成后生成报告"})
+                user = self.current_user() or {}
+                job = start_training_job(payload, str(user.get("username") or "unknown"))
+                self.append_event("training_jobs.jsonl", {"event": "started", **job})
+                self.send_json({**job, "message": "真实训练进程已启动，页面可持续查看日志和预计耗时"})
                 return
             if path == "/api/train/one-click":
-                algorithm = str(payload.get("algorithm") or "YOLO26N")
-                dataset = str(payload.get("dataset") or "宁波模塑综合数据集")
-                line_id = str(payload.get("line_id") or "automotive")
-                lines = read_config(PRODUCTION_LINES_PATH, [])
-                line = next((item for item in lines if item.get("id") == line_id), None) if isinstance(lines, list) else None
-                if line is None:
-                    self.send_json({"ok": False, "message": f"未知产线: {line_id}"}, 400)
-                    return
-                job_id = f"EVAL-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}"
-                record = {"job_id": job_id, "status": "已创建", "line_id": line_id, "line_name": line.get("name"), "algorithm": algorithm, "dataset": dataset, "workflow": ["训练", "推理", "验证", "测试", "可视化报告"], "created_at": time.time()}
-                self.append_event("training_jobs.jsonl", record)
-                self.send_json({"ok": True, **record, "report_url": "/api/training/report", "transfer_learning": line.get("transfer"), "message": "一键验证流水线已创建；当前报告使用已生成的基线图表，真实精度需冻结真值集后运行"})
+                user = self.current_user() or {}
+                job = start_training_job(payload, str(user.get("username") or "unknown"))
+                self.append_event("training_jobs.jsonl", {"event": "started", **job})
+                self.send_json({**job, "message": "真实训练进程已启动"})
                 return
             if path == "/api/cvat/task":
                 result = cvat_task_create(payload)
@@ -2266,6 +2650,7 @@ class SOPHandler(SimpleHTTPRequestHandler):
             if path == "/api/camera/start":
                 query = parse_qs(urlparse(self.path).query)
                 selected = query.get("camera", ["all"])[0]
+                refresh_camera_services()
                 services = ([service for service in LIVE_CAMERAS.values() if service.source]
                             if selected == "all" else [camera_service(int(selected))])
                 results = []
@@ -2277,6 +2662,11 @@ class SOPHandler(SimpleHTTPRequestHandler):
                     else:
                         results.append({"camera": service.camera_id, "ok": True})
                 self.send_json({"ok": all(item["ok"] for item in results), "camera": selected, "results": results}, 200)
+                return
+            if path == "/api/camera/refresh":
+                sources = refresh_camera_services()
+                inventory = device_inventory()
+                self.send_json({"ok": True, "message": f"已重新扫描，发现 {len(sources)} 路视频源", "sources": sources, "insta360": inventory.get("insta360")})
                 return
             if path == "/api/decision/review":
                 self.append_event("decision_reviews.jsonl", payload)

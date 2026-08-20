@@ -1,4 +1,6 @@
 const state = {
+  user: null,
+  appInitialized: false,
   dashboard: null,
   recipe: null,
   catalog: null,
@@ -23,6 +25,9 @@ const state = {
   algorithms: [],
   productionLines: [],
   datasets: [],
+  trainingDatasets: [],
+  trainingOutputs: [],
+  trainingJobTimer: null,
   pcbModels: [],
   loaded: { annotations: false, devices: false, quality: false },
   activeLineId: localStorage.getItem("sop.activeLine") || "pcb"
@@ -40,9 +45,58 @@ const fallbackSteps = [
 async function request(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "请求失败");
+  if (!response.ok) {
+    if (response.status === 401 && !url.startsWith("/api/auth/login")) showLogin();
+    throw new Error(data.message || "请求失败");
+  }
   return data;
 }
+
+function showLogin(message = "开发者、管理者和普通员工使用各自账号登录。") {
+  state.user = null;
+  document.body.classList.remove("auth-pending", "authenticated");
+  document.body.classList.add("unauthenticated");
+  const element = document.getElementById("loginMessage");
+  if (element) { element.textContent = message; element.classList.remove("bad"); }
+}
+
+function applyUser(user) {
+  state.user = user;
+  document.body.classList.remove("auth-pending", "unauthenticated");
+  document.body.classList.add("authenticated");
+  document.getElementById("currentUserName").textContent = user.display_name || user.username;
+  document.getElementById("currentUserRole").textContent = user.role_label || user.role;
+  document.querySelectorAll(".role-manager").forEach(item => item.classList.toggle("role-hidden", !["admin", "manager"].includes(user.role)));
+  document.querySelectorAll(".role-admin").forEach(item => item.classList.toggle("role-hidden", user.role !== "admin"));
+  document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("role-hidden", !(user.views || []).includes(item.dataset.view)));
+}
+
+document.getElementById("loginForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = document.getElementById("loginButton");
+  const message = document.getElementById("loginMessage");
+  button.disabled = true;
+  button.textContent = "正在验证…";
+  message.classList.remove("bad");
+  try {
+    const result = await request("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: document.getElementById("loginUsername").value, password: document.getElementById("loginPassword").value }) });
+    applyUser(result.user);
+    document.getElementById("loginPassword").value = "";
+    if (!state.appInitialized) await init();
+    else switchView("overview");
+  } catch (error) {
+    message.textContent = error.message;
+    message.classList.add("bad");
+  } finally {
+    button.disabled = false;
+    button.textContent = "登录";
+  }
+});
+
+document.getElementById("logoutButton").addEventListener("click", async () => {
+  await request("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+  showLogin("已安全退出。请使用岗位账号重新登录。");
+});
 
 function showToast(id, message, bad = false) {
   const element = document.getElementById(id);
@@ -71,6 +125,7 @@ function updateLastSaved(recordedAt = null) {
 }
 
 function switchView(name) {
+  if (state.user && !(state.user.views || []).includes(name)) name = "overview";
   document.querySelectorAll(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === name));
   document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === `view-${name}`));
   if (name === "decision") refreshDecision(document.getElementById("sopVideo").currentTime, true);
@@ -682,12 +737,7 @@ window.addEventListener("beforeunload", event => {
   event.returnValue = "";
 });
 
-document.getElementById("startTraining").addEventListener("click", async () => {
-  try {
-    const result = await request("/api/train/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset: document.getElementById("trainingDataset")?.value || "automotive-fasteners", algorithm: document.getElementById("trainingAlgorithm")?.value || "YOLO26N", device: document.getElementById("trainingDevice")?.value || "RTX 4060", gate: "人工复核完成后重新训练并用冻结测试集验收" }) });
-    showToast("trainingToast", `${result.message}｜${result.job_id}`);
-  } catch (error) { showToast("trainingToast", error.message, true); }
-});
+document.getElementById("startTraining").addEventListener("click", () => document.getElementById("realTrainingConsole").scrollIntoView({ behavior: "smooth" }));
 
 async function loadTrainingCatalog() {
   try {
@@ -695,18 +745,23 @@ async function loadTrainingCatalog() {
     state.algorithms = catalog.algorithms || [];
     state.productionLines = catalog.production_lines || [];
     state.datasets = catalog.datasets || [];
+    state.trainingDatasets = catalog.training_datasets || [];
+    state.trainingOutputs = catalog.outputs || [];
     const algorithm = document.getElementById("trainingAlgorithm");
     const dataset = document.getElementById("trainingDataset");
-    algorithm.innerHTML = state.algorithms.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${escapeHtml(item.role)}</option>`).join("");
-    dataset.innerHTML = state.datasets.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml(item.line)}</option>`).join("");
+    algorithm.innerHTML = state.algorithms.map(item => `<option value="${escapeHtml(item.id)}" ${["yolo26n", "yoloe26"].includes(item.id) ? "" : "disabled"}>${escapeHtml(item.name)} · ${escapeHtml(item.role)}${["yolo26n", "yoloe26"].includes(item.id) ? "" : "（训练后端待安装）"}</option>`).join("");
+    dataset.innerHTML = state.trainingDatasets.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${Number(item.images).toLocaleString("zh-CN")} 图 / ${Number(item.labels).toLocaleString("zh-CN")} 标签 · ${escapeHtml(item.truth_status)}</option>`).join("");
     const cvatDataset = document.getElementById("cvatDatasetSelect");
     cvatDataset.innerHTML = state.datasets.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml(item.line)}</option>`).join("");
-    document.getElementById("trainingCatalogStatus").textContent = `${catalog.algorithms.length} 个算法 · ${catalog.datasets.length} 个产线数据集`;
+    document.getElementById("trainingCatalogStatus").textContent = `${state.trainingDatasets.length} 个本地 YOLO 数据集 · ${catalog.algorithms.length} 个算法`;
     algorithm.addEventListener("change", renderAlgorithmChoice);
+    dataset.addEventListener("change", renderTrainingDatasetState);
+    document.getElementById("trainingOutput").addEventListener("change", renderTrainingOutputPath);
     renderProductionLineSelect();
     applyProductionLine(state.activeLineId);
     renderAlgorithmChoice();
-    await request("/api/production-lines/select", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ line_id: state.activeLineId }) });
+    renderTrainingDatasetState();
+    renderTrainingOutputPath();
   } catch (error) {
     document.getElementById("trainingCatalogStatus").textContent = "目录读取失败";
     document.getElementById("trainingProgress").textContent = error.message;
@@ -715,10 +770,23 @@ async function loadTrainingCatalog() {
 
 function renderAlgorithmChoice() {
   const select = document.getElementById("trainingAlgorithm");
-  const item = state.algorithms.find(entry => entry.name === select?.value) || state.algorithms[0];
+  const item = state.algorithms.find(entry => entry.id === select?.value) || state.algorithms[0];
   if (!item) return;
   document.getElementById("selectedAlgorithmLabel").textContent = `${item.name} · ${item.role}`;
   document.getElementById("algorithmChoice").innerHTML = `<b>${escapeHtml(item.name)} · ${escapeHtml(item.task)}</b><span>${escapeHtml(item.note || "")}<br>适用：${escapeHtml((item.recommended_for || []).join("、") || "请按产线真值数据验证")} · 权重：${escapeHtml(item.model_path || "待训练")}</span>`;
+}
+
+function renderTrainingDatasetState() {
+  const item = state.trainingDatasets.find(entry => entry.id === document.getElementById("trainingDataset")?.value);
+  const stateLabel = document.getElementById("trainingDatasetState");
+  if (!item) { stateLabel.textContent = "没有发现可训练的 data.yaml"; stateLabel.className = "training-dataset-blocked"; return; }
+  stateLabel.textContent = `${Number(item.images).toLocaleString("zh-CN")} 张图片 / ${Number(item.labels).toLocaleString("zh-CN")} 个标签文件 · ${item.truth_status}`;
+  stateLabel.className = item.truth_ready ? "training-dataset-ready" : "training-dataset-blocked";
+}
+
+function renderTrainingOutputPath() {
+  const item = state.trainingOutputs.find(entry => entry.id === document.getElementById("trainingOutput")?.value);
+  document.getElementById("trainingOutputPath").textContent = item?.path || "由后端限制在安全目录";
 }
 
 function renderProductionLineSelect() {
@@ -742,16 +810,14 @@ function applyProductionLine(lineId) {
   document.getElementById("lineModelStatus").textContent = `识别模型：${line.primary_model}${line.quality_model ? ` + ${line.quality_model}` : ""}`;
   document.getElementById("trainingLineName").textContent = line.name;
   const algorithmSelect = document.getElementById("trainingAlgorithm");
-  if ([...algorithmSelect.options].some(option => option.value === line.primary_model)) algorithmSelect.value = line.primary_model;
+  const matchingAlgorithm = state.algorithms.find(item => item.name === line.primary_model && ["yolo26n", "yoloe26"].includes(item.id));
+  if (matchingAlgorithm) algorithmSelect.value = matchingAlgorithm.id;
   document.getElementById("selectedAlgorithmLabel").textContent = `${line.primary_model} · ${line.short_name}`;
-  const dataset = document.getElementById("trainingDataset");
   const available = new Set(line.dataset_ids || []);
   const lineDatasets = state.datasets.filter(item => available.has(item.id));
-  dataset.innerHTML = lineDatasets.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml(item.status || item.line)}</option>`).join("");
   const cvatDataset = document.getElementById("cvatDatasetSelect");
   cvatDataset.innerHTML = lineDatasets.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml(item.status || item.line)}</option>`).join("");
-  const match = [...dataset.options][0];
-  if (match) dataset.value = match.value;
+  const match = [...cvatDataset.options][0];
   if (cvatDataset && match) cvatDataset.value = match.value;
   const labelSelect = document.getElementById("annotLabel");
   if (labelSelect) labelSelect.innerHTML = (line.labels || []).map(label => `<option>${escapeHtml(label)}</option>`).join("");
@@ -815,14 +881,70 @@ document.getElementById("applyLineModel").addEventListener("click", async () => 
 
 document.getElementById("oneClickTraining").addEventListener("click", async () => {
   const progress = document.getElementById("trainingProgress");
-  progress.textContent = "正在登记训练 → 推理 → 验证 → 测试流水线…";
+  progress.textContent = "正在检查数据、权重、参数与输出目录…";
   try {
-    const result = await request("/api/train/one-click", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ line_id: state.activeLineId, algorithm: document.getElementById("trainingAlgorithm").value, dataset: document.getElementById("trainingDataset").value, device: document.getElementById("trainingDevice").value }) });
-    progress.textContent = `${result.message} 任务号：${result.job_id}；${result.line_name}；报告图表：${result.report_url}`;
+    const payload = {
+      algorithm: document.getElementById("trainingAlgorithm").value,
+      dataset: document.getElementById("trainingDataset").value,
+      truth_mode: document.getElementById("trainingTruthMode").value,
+      device: document.getElementById("trainingDevice").value,
+      epochs: Number(document.getElementById("trainingEpochs").value),
+      batch: Number(document.getElementById("trainingBatch").value),
+      imgsz: Number(document.getElementById("trainingImgsz").value),
+      workers: Number(document.getElementById("trainingWorkers").value),
+      patience: Number(document.getElementById("trainingPatience").value),
+      seed: Number(document.getElementById("trainingSeed").value),
+      output: document.getElementById("trainingOutput").value,
+      target: document.getElementById("trainingTarget").value,
+      optimizer: document.getElementById("trainingOptimizer").value,
+      lr0: Number(document.getElementById("trainingLr0").value),
+      weight_decay: Number(document.getElementById("trainingWeightDecay").value),
+      close_mosaic: Number(document.getElementById("trainingCloseMosaic").value),
+      freeze: Number(document.getElementById("trainingFreeze").value),
+      cache: document.getElementById("trainingCache").value,
+      amp: document.getElementById("trainingAmp").checked,
+    };
+    const result = await request("/api/train/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const range = result.estimated_range_seconds || [];
+    progress.textContent = `${result.message} 任务号：${result.job_id}；预计 ${Math.ceil((range[0] || 0) / 60)}–${Math.ceil((range[1] || 0) / 60)} 分钟，实际时间取决于显存和数据解码。`;
     showToast("trainingToast", `${result.message}｜${result.job_id}`);
-    await renderTrainingResults(result);
+    document.getElementById("trainingLive").hidden = false;
+    await pollTrainingJob(result.job_id);
   } catch (error) { progress.textContent = error.message; showToast("trainingToast", error.message, true); }
 });
+
+async function pollTrainingJob(jobId) {
+  window.clearTimeout(state.trainingJobTimer);
+  try {
+    const job = await request(`/api/train/jobs/${encodeURIComponent(jobId)}`);
+    document.getElementById("trainingLiveTitle").textContent = `${job.job_id} · ${job.algorithm}`;
+    document.getElementById("trainingLiveStatus").textContent = `${job.stage || job.status} · ${job.progress || 0}%`;
+    document.getElementById("trainingLiveProgress").value = Number(job.progress || 0);
+    document.getElementById("trainingLog").textContent = (job.log_tail || []).join("\n") || "训练进程已启动，等待首批日志…";
+    const download = document.getElementById("trainingDownload");
+    if (job.download_url) { download.href = job.download_url; download.hidden = false; download.setAttribute("download", ""); }
+    if (job.status === "completed") {
+      document.getElementById("trainingProgress").textContent = `${job.message}；耗时 ${Math.ceil(Number(job.elapsed_seconds || 0) / 60)} 分钟；输出：${job.output_dir}`;
+      renderCompletedTraining(job);
+      return;
+    }
+    if (job.status === "failed") { document.getElementById("trainingProgress").textContent = `训练失败：${job.message}`; return; }
+    state.trainingJobTimer = window.setTimeout(() => pollTrainingJob(jobId), 3000);
+  } catch (error) { document.getElementById("trainingProgress").textContent = error.message; }
+}
+
+function renderCompletedTraining(job) {
+  const metrics = job.metrics || {};
+  const values = [
+    [metrics["metrics/precision(B)"], "Precision"], [metrics["metrics/recall(B)"], "Recall"],
+    [metrics["metrics/mAP50(B)"], "mAP50"], [metrics["metrics/mAP50-95(B)"], "mAP50-95"],
+  ];
+  document.getElementById("trainingResults").hidden = false;
+  document.getElementById("trainingResultStatus").textContent = `${job.truth_mode === "human-confirmed" ? "人工真值验证" : "候选一致性验证"} · ${job.job_id}`;
+  document.getElementById("trainingResultSummary").innerHTML = values.map(([value, label]) => `<div><b>${value == null ? "--" : (Number(value) * 100).toFixed(1) + "%"}</b><span>${label}</span></div>`).join("");
+  document.getElementById("trainingStageTrack").innerHTML = ["数据校验", "真实训练", "验证集评估", "ONNX 导出", "部署包"].map((name, index) => `<div>${index + 1}. ${name} ✓</div>`).join("");
+  document.getElementById("trainingCharts").innerHTML = `<p class="quality-copy">输出目录：${escapeHtml(job.output_dir)}<br>${escapeHtml(job.truth_notice || "")}</p>`;
+}
 
 async function loadCvatIntegration() {
   try {
@@ -845,7 +967,11 @@ async function loadCvatTasks() {
   try {
     const result = await request("/api/cvat/tasks");
     const tasks = result.items || [];
-    rows.innerHTML = tasks.length ? tasks.map((item, index) => `<div class="history-row"><b>${index + 1}. ${escapeHtml(item.name)}</b><span>${escapeHtml(item.status)} · ${escapeHtml(item.dataset_id || "未指定数据集")} · ${escapeHtml(item.created_at)}</span><small>${item.cvat_task_id == null ? "入口待配置" : `CVAT #${item.cvat_task_id}`} · ${(item.labels || []).length} 个标签</small><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开任务</a></div>`).join("") : "<span>尚无 CVAT 任务。填写名称和数据集后点击“创建 CVAT 任务”。</span>";
+    const bulk = result.bulk || {};
+    const counts = bulk.counts || {};
+    const project = bulk.project || {};
+    const summary = project.project_id ? `<div class="history-row region-summary"><b>共享项目 #${escapeHtml(project.project_id)} · ${escapeHtml(project.name || "全量视频标注")}</b><span>已扫描 ${Number(bulk.total_seen || 0).toLocaleString("zh-CN")} 段 · 已提交 ${Number(counts.submitted || 0).toLocaleString("zh-CN")} · 解码中 ${Number(counts.created || 0).toLocaleString("zh-CN")} · 无效 ${Number(counts.invalid || 0).toLocaleString("zh-CN")} · 失败 ${Number(counts.failed || 0).toLocaleString("zh-CN")}</span><small>项目位于 lan-team 组织，原有标注账号均可见；后台按文件大小持续断点上传。</small><a href="${escapeHtml(project.url || "#")}" target="_blank" rel="noreferrer">打开项目</a></div>` : "";
+    rows.innerHTML = summary + (tasks.length ? tasks.map((item, index) => `<div class="history-row"><b>${index + 1}. ${escapeHtml(item.name)}</b><span>${escapeHtml(item.status)} · ${escapeHtml(item.dataset_id || "未指定数据集")} · ${escapeHtml(item.created_at)}</span><small>${item.cvat_task_id == null ? "入口待配置" : `CVAT #${item.cvat_task_id}`} · ${(item.labels || []).length} 个标签</small><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开任务</a></div>`).join("") : "<span>尚无 CVAT 任务。填写名称和数据集后点击“创建 CVAT 任务”。</span>");
   } catch (error) {
     rows.innerHTML = `<span>CVAT 任务读取失败：${escapeHtml(error.message)}</span>`;
   }
@@ -1101,7 +1227,7 @@ async function stopCameraWall() {
 async function loadDeviceInventory() {
   try {
     const inventory = await request("/api/device/inventory");
-    document.getElementById("deviceNetworkNote").textContent = inventory.camera_network_note;
+    document.getElementById("deviceNetworkNote").textContent = `${inventory.camera_network_note} 影石状态：${inventory.insta360?.message || "未读取"}`;
     renderCameraOptions(inventory.camera_sources || []);
     renderCameraWall(inventory.camera_sources || []);
     renderDeviceList("videoDeviceRows", inventory.videos?.filter(item => item.video_capture), "未发现视频采集设备");
@@ -1111,7 +1237,11 @@ async function loadDeviceInventory() {
   } catch (error) { document.getElementById("deviceNetworkNote").textContent = `设备信息读取失败：${error.message}`; }
 }
 
-document.getElementById("refreshDevices").addEventListener("click", loadDeviceInventory);
+document.getElementById("refreshDevices").addEventListener("click", async () => {
+  const result = await request("/api/camera/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(error => ({ message: error.message }));
+  document.getElementById("deviceNetworkNote").textContent = `${result.message || "重新扫描完成"}；${result.insta360?.message || ""}`;
+  await loadDeviceInventory();
+});
 document.getElementById("startAllCameras").addEventListener("click", startCameraWall);
 document.getElementById("stopAllCameras").addEventListener("click", stopCameraWall);
 
@@ -1206,13 +1336,42 @@ async function init() {
   video.addEventListener("loadedmetadata", () => updateVideoStatus(video));
   updateVideoStatus(video);
   pollCameraStatus();
-  await loadTrainingCatalog();
-  await loadPcbModels();
-  loadSparkStatus();
+  if (["admin", "manager"].includes(state.user?.role)) {
+    await loadTrainingCatalog();
+    await loadPcbModels();
+    loadSparkStatus();
+  }
   fitCanvas();
-  refreshDecision(0, true);
+  if (["admin", "manager"].includes(state.user?.role)) refreshDecision(0, true);
+  loadOverviewStatus();
   const initialView = window.location.hash.replace("#", "");
   if (initialView && document.getElementById(`view-${initialView}`)) switchView(initialView);
+  state.appInitialized = true;
 }
 
-init();
+async function loadOverviewStatus() {
+  try {
+    const inventory = await request("/api/device/inventory");
+    const cameras = inventory.camera_sources || [];
+    document.getElementById("overviewCameraRows").innerHTML = cameras.length
+      ? cameras.map(item => `<span><i class="online"></i><b>${escapeHtml(item.camera_name || `摄像头${item.camera_id}`)}</b><em>已发现</em></span>`).join("")
+      : '<span><i class="warning"></i><b>摄像头设备</b><em>未发现</em></span>';
+  } catch (_) { /* 总览保持降级状态 */ }
+  try {
+    const [cvat, tasks] = await Promise.all([request("/api/cvat/status"), request("/api/cvat/tasks")]);
+    document.getElementById("overviewCvatDot").className = cvat.available ? "online" : "warning";
+    document.getElementById("overviewTaskCount").textContent = `${(tasks.items || []).length} 个已登记任务`;
+    document.getElementById("overviewTaskDot").className = (tasks.items || []).length ? "online" : "warning";
+  } catch (_) { /* CVAT 状态不阻塞主页 */ }
+}
+
+async function bootstrapAuth() {
+  try {
+    const status = await request("/api/auth/status");
+    if (!status.authenticated || !status.user) { showLogin(); return; }
+    applyUser(status.user);
+    await init();
+  } catch (_) { showLogin("无法读取登录状态，请检查平台服务后重试。"); }
+}
+
+bootstrapAuth();
