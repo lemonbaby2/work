@@ -87,6 +87,19 @@ def task_has_data(session: requests.Session, api_url: str, task_id: int) -> bool
     return int(response.json().get("size") or 0) > 0
 
 
+def reconcile_existing_task(session: requests.Session, api_url: str, task_id: int) -> bool:
+    if task_has_data(session, api_url, task_id):
+        return True
+    request_id = f"action=create&target=task&target_id={task_id}"
+    response = session.get(f"{api_url}/api/requests/{requests.utils.quote(request_id, safe='')}", timeout=30)
+    if response.status_code == 404:
+        return False
+    response.raise_for_status()
+    if response.json().get("status") in {"queued", "started"}:
+        wait_until_processed(session, api_url, task_id)
+    return task_has_data(session, api_url, task_id)
+
+
 def upload_video(session: requests.Session, api_url: str, task_id: int, video: Path) -> None:
     with video.open("rb") as handle:
         response = session.post(
@@ -172,7 +185,7 @@ def main() -> None:
             continue
         task_id = old.get("task_id")
         try:
-            if task_id and task_has_data(session, api_url, int(task_id)):
+            if task_id and reconcile_existing_task(session, api_url, int(task_id)):
                 append_state(args.state, {**base, "status": "submitted", "task_id": int(task_id), "message": "CVAT 已有完整视频数据，断点恢复时不重复上传"})
                 submitted_signatures[signature] = source_key
                 continue
