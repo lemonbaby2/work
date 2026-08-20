@@ -1,0 +1,162 @@
+{
+  "id": "video_nb0819_07",
+  "display_name": "8月19日漏焊返修｜7.mp4",
+  "source": "/home/xjai/Desktop/sop xjai/视频数据/宁波SoP项目/8月19号（工位4漏焊）/7.mp4",
+  "video": "media/local/ningbo_sop/video_nb0819_07_720p.mp4",
+  "source_video": "media/local/ningbo_sop/video_nb0819_07_720p.mp4",
+  "frames": 4153,
+  "fps": 15.0002,
+  "resolution": "2304x1296",
+  "duration_s": 276.863,
+  "algorithm": "YOLOE开放词汇关键帧 + ROI切片小目标 + 固定机位邻近传播 + 动作关系候选",
+  "parts": [
+    {
+      "label": "工人工位区",
+      "class": "工人工位ROI",
+      "roi": [
+        0.03,
+        0.0,
+        0.97,
+        1.0
+      ]
+    },
+    {
+      "label": "PCB/夹具操作区",
+      "class": "PCB/夹具ROI",
+      "roi": [
+        0.22,
+        0.18,
+        0.78,
+        0.92
+      ]
+    },
+    {
+      "label": "烙铁与手工具区",
+      "class": "工具ROI",
+      "roi": [
+        0.02,
+        0.18,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "label": "焊料与电子物料区",
+      "class": "物料ROI",
+      "roi": [
+        0.0,
+        0.42,
+        0.43,
+        1.0
+      ]
+    },
+    {
+      "label": "成品与料盒区",
+      "class": "成品/外壳ROI",
+      "roi": [
+        0.64,
+        0.12,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "S01",
+      "label": "取板/物料准备候选",
+      "start_s": 0.0,
+      "end_s": 69.216,
+      "duration_s": 69.216,
+      "roi": [
+        0.22,
+        0.18,
+        0.78,
+        0.92
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    },
+    {
+      "id": "S02",
+      "label": "PCB夹持与元器件处理候选",
+      "start_s": 69.216,
+      "end_s": 138.431,
+      "duration_s": 69.216,
+      "roi": [
+        0.22,
+        0.18,
+        0.78,
+        0.92
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    },
+    {
+      "id": "S03",
+      "label": "焊接/返修操作候选",
+      "start_s": 138.431,
+      "end_s": 207.647,
+      "duration_s": 69.216,
+      "roi": [
+        0.22,
+        0.18,
+        0.78,
+        0.92
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    },
+    {
+      "id": "S04",
+      "label": "完成复检候选",
+      "start_s": 207.647,
+      "end_s": 276.863,
+      "duration_s": 69.216,
+      "roi": [
+        0.22,
+        0.18,
+        0.78,
+        0.92
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    }
+  ],
+  "snapshots": [
+    "snapshots/video_nb0819_07/S01_0035秒.jpg",
+    "snapshots/video_nb0819_07/S02_0104秒.jpg",
+    "snapshots/video_nb0819_07/S03_0173秒.jpg",
+    "snapshots/video_nb0819_07/S04_0242秒.jpg"
+  ],
+  "annotation_source": "data/video_nb0819_07_frame_annotations.jsonl",
+  "candidate_source": "data/video_nb0819_07_fine_object_candidates.jsonl",
+  "keyframes": 277,
+  "small_object_interval_s": 5.0,
+  "clarity_score": 365.0,
+  "sharpened_proxy": false,
+  "candidate_counts": {
+    "工人工位ROI": 277,
+    "PCB/夹具ROI": 277,
+    "工具ROI": 277,
+    "物料ROI": 277,
+    "成品/外壳ROI": 277,
+    "操作人员": 240,
+    "产品/外壳": 588,
+    "电烙铁": 579,
+    "焊锡丝/焊料": 279,
+    "PCB板": 265,
+    "电子物料": 422,
+    "物料盒": 665,
+    "操作人员手部": 325,
+    "PCB夹具": 109,
+    "取放物料候选": 212,
+    "电容候选": 168,
+    "电阻候选": 168,
+    "电感候选": 168,
+    "镊子": 27,
+    "镊子夹取/对位候选": 11,
+    "螺钉候选": 39,
+    "焊接操作候选": 87,
+    "PCB持取/翻面候选": 9
+  },
+  "production_release": "HOLD",
+  "truth_policy": "自动框、ROI、动作和传播结果均为待人工复核候选，不是生产真值。",
+  "processing_seconds": 30.52
+}

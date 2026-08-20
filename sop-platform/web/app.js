@@ -9,6 +9,8 @@ const state = {
   decisionSecond: -1,
   cameraTimer: null,
   cameraActive: false,
+  cameraSingleActive: false,
+  cameraWallActive: false,
   recording: false,
   selectedCamera: "0",
   cameraOptions: [],
@@ -96,10 +98,15 @@ function currentVideoInfo() {
 function renderCameraOptions(cameras = []) {
   const select = document.getElementById("cameraSelect");
   if (!select) return;
-  const fallback = [0, 1, 2, 3].map(camera_id => ({ camera_id, camera_name: `摄像头${camera_id}`, source: `未配置` }));
-  const items = cameras.length ? cameras : fallback;
+  const items = cameras.filter(item => item?.source);
   state.cameraOptions = items;
-  const current = String(state.selectedCamera ?? items[0]?.camera_id ?? "0");
+  if (!items.length) {
+    select.innerHTML = '<option value="">未发现可用摄像头</option>';
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  const current = String(state.selectedCamera ?? items[0].camera_id);
   select.innerHTML = items.map(item => {
     const cameraId = String(item.camera_id);
     const label = item.camera_name || `摄像头${cameraId}`;
@@ -107,7 +114,7 @@ function renderCameraOptions(cameras = []) {
     return `<option value="${escapeHtml(cameraId)}">${escapeHtml(label)} · ${escapeHtml(source)}</option>`;
   }).join("");
   const hasCurrent = items.some(item => String(item.camera_id) === current);
-  state.selectedCamera = hasCurrent ? current : String(items[0]?.camera_id ?? "0");
+  state.selectedCamera = hasCurrent ? current : String(items[0].camera_id);
   select.value = state.selectedCamera;
 }
 
@@ -123,8 +130,10 @@ function activeStep(time) {
 function renderVideoSwitcher() {
   const switcher = document.getElementById("videoSwitcher");
   if (!state.catalog) return;
-  const numerals = ["一", "二", "三", "四", "五", "六", "七", "八"];
-  switcher.innerHTML = state.catalog.videos.map((video, index) => `<button data-video="${video.id}" class="${video.id === state.currentVideoId ? "active" : ""}">视频${numerals[index] || index + 1} · ${video.duration_s}秒</button>`).join("");
+  switcher.innerHTML = state.catalog.videos.map((video, index) => {
+    const shortName = String(video.display_name || video.id).split("｜").at(-1).replace(/\.mp4$/i, "");
+    return `<button data-video="${escapeHtml(video.id)}" title="${escapeHtml(video.display_name || video.id)}" class="${video.id === state.currentVideoId ? "active" : ""}">视频${index + 1} · ${escapeHtml(shortName.slice(0, 18))} · ${Number(video.duration_s).toFixed(1)}秒</button>`;
+  }).join("");
   switcher.querySelectorAll("button").forEach(button => button.addEventListener("click", () => selectVideo(button.dataset.video)));
 }
 
@@ -144,6 +153,8 @@ function selectVideo(videoId) {
   state.box = null;
   markAnnotationDirty(false);
   document.getElementById("annotVideoSelect").value = videoId;
+  const cvatSelectedVideo = document.getElementById("cvatSelectedVideo");
+  if (cvatSelectedVideo) cvatSelectedVideo.textContent = `${info.display_name || videoId} · ${Number(info.duration_s || 0).toFixed(1)} 秒`;
   document.getElementById("videoAlgorithm").textContent = info.algorithm?.split(" + ").slice(0, 2).join(" + ") || "目标检测 + SOP状态机";
   document.getElementById("videoResolution").textContent = info.presentation_resolution || info.resolution || "1620×720";
   renderVideoSwitcher();
@@ -254,8 +265,9 @@ async function refreshDecision(time, force = false) {
     document.getElementById("riskScore").textContent = decision.risk_score;
     document.getElementById("riskLevel").textContent = decision.risk_level;
     document.getElementById("riskRing").style.background = `conic-gradient(#e19a33 ${decision.risk_score}%,#314957 0)`;
-    document.getElementById("evidenceScore").textContent = `${decision.evidence_score}%`;
-    document.getElementById("evidenceMeter").style.width = `${decision.evidence_score}%`;
+    const completeness = Number(decision.evidence_completeness ?? decision.evidence_score ?? 0);
+    document.getElementById("evidenceScore").textContent = `${completeness}%`;
+    document.getElementById("evidenceMeter").style.width = `${completeness}%`;
     document.getElementById("decisionStep").textContent = `${decision.step.id} ${decision.step.label}`;
     document.getElementById("decisionTime").textContent = `${decision.time_s.toFixed(1)}秒`;
     document.getElementById("decisionReasons").innerHTML = decision.reasons.map(reason => `<li>${reason}</li>`).join("");
@@ -264,9 +276,51 @@ async function refreshDecision(time, force = false) {
     document.getElementById("countDynamic").textContent = decision.objects.dynamic;
     document.getElementById("countFastener").textContent = decision.objects.fastener_candidates;
     document.getElementById("truthNotice").textContent = decision.truth_notice;
+    const missing = decision.missing_evidence || [];
+    document.getElementById("decisionMissing").textContent = missing.length ? `缺少：${missing.join("、")}` : "当前视觉必需项已经看到，仍需质量/MES确认";
+    const labels = decision.detected_labels || [];
+    document.getElementById("decisionDetectedLabels").innerHTML = labels.length ? labels.slice(0, 12).map(label => `<span>${escapeHtml(label)}</span>`).join("") : "<span>当前关键帧未检测到稳定目标</span>";
+    renderVideoDetections(decision);
   } catch (error) {
     document.getElementById("decisionAction").textContent = `决策服务暂不可用：${error.message}`;
+    renderVideoDetections(null);
   }
+}
+
+function renderVideoDetections(decision) {
+  const canvas = document.getElementById("sopDetectionCanvas");
+  const video = document.getElementById("sopVideo");
+  if (!canvas || !video) return;
+  const width = Number(decision?.frame_size?.width || video.videoWidth || 1280);
+  const height = Number(decision?.frame_size?.height || video.videoHeight || 720);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, width, height);
+  if (!decision) return;
+  const items = [...(decision.detections || []), ...(decision.candidates || [])].slice(0, 28);
+  context.lineWidth = Math.max(2, width / 640);
+  context.font = `${Math.max(14, Math.round(width / 85))}px Microsoft YaHei, sans-serif`;
+  items.forEach(item => {
+    const box = item.xyxy || item.box_pixels;
+    if (!Array.isArray(box) || box.length !== 4) return;
+    const label = String(item.label || "候选目标");
+    const color = label.includes("ROI") ? "#35a7ff" : (label.includes("操作") || label.includes("取放") || label.includes("复检") ? "#ffb13b" : (label.includes("手部") ? "#3be0a5" : (label.includes("PCB") ? "#26d6e5" : "#f16d8f")));
+    const [x1, y1, x2, y2] = box.map(Number);
+    context.strokeStyle = color;
+    context.strokeRect(x1, y1, Math.max(1, x2 - x1), Math.max(1, y2 - y1));
+    const confidence = item.confidence == null ? "" : ` ${Math.round(Number(item.confidence) * 100)}%`;
+    const text = `${label}${confidence}`;
+    const textWidth = context.measureText(text).width + 12;
+    const textHeight = Math.max(22, width / 55);
+    const top = Math.max(0, y1 - textHeight);
+    context.fillStyle = "rgba(7,16,24,.84)";
+    context.fillRect(x1, top, Math.min(textWidth, width - x1), textHeight);
+    context.fillStyle = color;
+    context.fillText(text, x1 + 6, top + textHeight - 6, Math.max(20, width - x1 - 8));
+  });
 }
 
 document.querySelectorAll(".decision-review").forEach(button => button.addEventListener("click", async () => {
@@ -801,7 +855,7 @@ document.getElementById("createCvatTask").addEventListener("click", async () => 
   const datasetId = document.getElementById("cvatDatasetSelect").value;
   const labels = activeProductionLine()?.labels || [];
   try {
-    const result = await request("/api/cvat/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: document.getElementById("cvatTaskName").value, dataset_id: datasetId, line_id: state.activeLineId, labels }) });
+    const result = await request("/api/cvat/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: document.getElementById("cvatTaskName").value, dataset_id: datasetId, line_id: state.activeLineId, labels, video_id: state.currentVideoId, upload_video: true }) });
     document.getElementById("cvatMessage").textContent = `${result.message}：${result.url}`;
     await loadCvatTasks();
     window.open(result.url, "_blank", "noopener,noreferrer");
@@ -836,7 +890,7 @@ function renderCameraStatus(status) {
   if (!badge || !status) return;
   const running = Boolean(status.running);
   const hasError = Boolean(status.error);
-  badge.textContent = hasError ? "异常" : (running ? "实时运行" : "未启动");
+  badge.textContent = status.reconnecting ? "自动重连中" : (hasError ? "异常" : (running ? "实时运行" : "未启动"));
   badge.className = `badge ${hasError ? "camera-error" : (running ? "camera-live" : "")}`;
   document.getElementById("cameraSource").textContent = status.source || "--";
   document.getElementById("cameraResolution").textContent = status.width && status.height ? `${status.width}×${status.height}` : "--";
@@ -845,13 +899,16 @@ function renderCameraStatus(status) {
   document.getElementById("cameraDropped").textContent = Number.isFinite(status.dropped_frames) ? `${status.dropped_frames} 帧` : "--";
   document.getElementById("cameraBuffer").textContent = status.buffering_strategy === "latest-frame-mailbox" ? `最新帧 · ${status.queue_depth || 0}/${status.queue_capacity || 1}` : "--";
   document.getElementById("cameraDetections").textContent = Number.isFinite(status.detections) ? `${status.detections} 个` : "--";
+  document.getElementById("cameraRecovery").textContent = `${status.reconnects || 0} / ${status.read_failures || 0}`;
+  document.getElementById("cameraInferenceAge").textContent = Number.isFinite(status.inference_age_ms) ? `${status.inference_age_ms} ms` : "--";
   document.getElementById("cameraModelName").textContent = status.model || activeProductionLine()?.primary_model || "产线模型";
   const output = document.getElementById("cameraOutput");
   if (output) output.textContent = status.output_dir || "桌面/sop xjai";
   state.recording = Boolean(status.recording);
   const recordButton = document.getElementById("recordLiveCamera");
   if (recordButton) recordButton.textContent = state.recording ? "停止录制" : "开始录制";
-  if (hasError) message.textContent = status.error;
+  if (status.reconnecting) message.textContent = `${status.error || "摄像头正在自动恢复"}；网页会保持连接，无需重复点击启动。`;
+  else if (hasError) message.textContent = status.error;
   else if (running) message.textContent = `模型 ${status.model || "YOLOv11n"} 正在实时检测；过期帧直接丢弃，当前端到端 ${status.pipeline_ms || 0} ms。`;
   else message.textContent = "点击“启动实时检测”打开摄像头";
 }
@@ -862,9 +919,16 @@ async function pollCameraStatus() {
     if (Array.isArray(status.cameras) && status.cameras.length) {
       const connected = state.connectedCameras.length ? state.connectedCameras : status.cameras.filter(item => item.source);
       renderCameraOptions(connected);
+      status.cameras.forEach(item => {
+        const tile = document.querySelector(`[data-wall-camera="${CSS.escape(String(item.camera_id))}"] .camera-tile-state`);
+        if (!tile) return;
+        if (item.reconnecting) tile.textContent = `自动重连 · 已重连${item.reconnects || 0}次`;
+        else if (item.running) tile.textContent = `${item.output_fps || 0} FPS · ${item.pipeline_ms || 0} ms · ${item.detections || 0}目标`;
+        else tile.textContent = item.error || "未启动";
+      });
     }
     renderCameraStatus(status);
-    if (status.error && state.cameraActive) {
+    if (status.error && !status.running && state.cameraActive) {
       state.cameraActive = false;
       window.clearInterval(state.cameraTimer);
       state.cameraTimer = null;
@@ -878,6 +942,7 @@ document.getElementById("startLiveCamera").addEventListener("click", async () =>
   const feed = document.getElementById("liveCameraFeed");
   const placeholder = document.getElementById("liveCameraPlaceholder");
   state.cameraActive = true;
+  state.cameraSingleActive = true;
   placeholder.hidden = true;
   try { await request(`/api/camera/start?camera=${state.selectedCamera}`, { method: "POST" }); } catch (error) {
     document.getElementById("cameraMessage").textContent = error.message;
@@ -889,12 +954,15 @@ document.getElementById("startLiveCamera").addEventListener("click", async () =>
 });
 
 document.getElementById("stopLiveCamera").addEventListener("click", async () => {
-  state.cameraActive = false;
+  state.cameraSingleActive = false;
+  state.cameraActive = state.cameraWallActive;
   window.clearInterval(state.cameraTimer);
   state.cameraTimer = null;
   document.getElementById("liveCameraFeed").removeAttribute("src");
   document.getElementById("liveCameraPlaceholder").hidden = false;
-  try { await request(`/api/camera/stop?camera=${state.selectedCamera}`, { method: "POST" }); } catch (_) { /* 页面关闭时服务可能已经停止 */ }
+  if (!state.cameraWallActive) {
+    try { await request(`/api/camera/stop?camera=${state.selectedCamera}`, { method: "POST" }); } catch (_) { /* 页面关闭时服务可能已经停止 */ }
+  }
   await pollCameraStatus();
 });
 
@@ -917,8 +985,9 @@ document.getElementById("recordLiveCamera").addEventListener("click", async () =
 document.getElementById("cameraSelect").addEventListener("change", async event => {
   const previous = state.selectedCamera;
   state.selectedCamera = event.target.value;
-  if (state.cameraActive && previous !== state.selectedCamera) {
-    await request(`/api/camera/stop?camera=${previous}`, { method: "POST" }).catch(() => {});
+  if (state.cameraSingleActive && previous !== state.selectedCamera) {
+    if (!state.cameraWallActive) await request(`/api/camera/stop?camera=${previous}`, { method: "POST" }).catch(() => {});
+    await request(`/api/camera/start?camera=${state.selectedCamera}`, { method: "POST" }).catch(() => {});
     document.getElementById("liveCameraFeed").src = `/api/camera/mjpeg?camera=${state.selectedCamera}&ts=${Date.now()}`;
   }
   pollCameraStatus();
@@ -1002,25 +1071,28 @@ function renderCameraWall(cameras) {
   const wall = document.getElementById("cameraWall");
   if (!wall) return;
   state.connectedCameras = cameras || [];
-  wall.innerHTML = state.connectedCameras.length ? state.connectedCameras.map(item => `<article class="camera-tile" data-wall-camera="${escapeHtml(item.camera_id)}"><img alt="${escapeHtml(item.camera_name || `摄像头${item.camera_id}`)}实时视频流"><footer><span>${escapeHtml(item.camera_name || `摄像头${item.camera_id}`)}</span><span>${escapeHtml(item.source || "未绑定")}</span></footer></article>`).join("") : `<span class="device-empty">未发现可用的视频采集设备</span>`;
+  wall.innerHTML = state.connectedCameras.length ? state.connectedCameras.map(item => `<article class="camera-tile" data-wall-camera="${escapeHtml(item.camera_id)}"><img alt="${escapeHtml(item.camera_name || `摄像头${item.camera_id}`)}实时视频流"><footer><span>${escapeHtml(item.camera_name || `摄像头${item.camera_id}`)}</span><span class="camera-tile-state">待启动 · ${escapeHtml(item.source || "未绑定")}</span></footer></article>`).join("") : `<span class="device-empty">未发现可用的视频采集设备</span>`;
 }
 
 async function startCameraWall() {
   if (!state.connectedCameras.length) await loadDeviceInventory();
+  await request("/api/camera/start?camera=all", { method: "POST" }).catch(() => null);
   const stamp = Date.now();
   document.querySelectorAll("[data-wall-camera]").forEach(tile => {
     const id = tile.dataset.wallCamera;
     tile.querySelector("img").src = `/api/camera/mjpeg?camera=${encodeURIComponent(id)}&ts=${stamp}`;
   });
   state.cameraActive = true;
+  state.cameraWallActive = true;
   window.clearInterval(state.cameraTimer);
   state.cameraTimer = window.setInterval(pollCameraStatus, 1500);
 }
 
 async function stopCameraWall() {
   document.querySelectorAll("[data-wall-camera] img").forEach(image => image.removeAttribute("src"));
-  await Promise.all(state.connectedCameras.map(item => request(`/api/camera/stop?camera=${encodeURIComponent(item.camera_id)}`, { method: "POST" }).catch(() => null)));
-  state.cameraActive = false;
+  state.cameraWallActive = false;
+  await Promise.all(state.connectedCameras.filter(item => !state.cameraSingleActive || String(item.camera_id) !== String(state.selectedCamera)).map(item => request(`/api/camera/stop?camera=${encodeURIComponent(item.camera_id)}`, { method: "POST" }).catch(() => null)));
+  state.cameraActive = state.cameraSingleActive;
   window.clearInterval(state.cameraTimer);
   state.cameraTimer = null;
   await pollCameraStatus();
@@ -1111,11 +1183,13 @@ async function init() {
     document.getElementById("kpiDuration").textContent = `累计${state.catalog.totals.duration_s}秒`;
     document.getElementById("kpiFrames").textContent = `${Number(state.catalog.totals.frames).toLocaleString("zh-CN")} 帧`;
     document.getElementById("kpiSteps").textContent = `${state.catalog.totals.steps} 步`;
-    const sampled = state.catalog.frontier_extension ? 1013 : (state.catalog.small_object_enhancement ? 469 : 0);
+    const sampled = Number(state.catalog.ningbo_station_extension?.keyframes || (state.catalog.frontier_extension ? 1013 : (state.catalog.small_object_enhancement ? 469 : 0)));
     const prelabelImages = document.getElementById("prelabelImages");
     if (prelabelImages) prelabelImages.textContent = sampled;
     document.getElementById("annotVideoSelect").innerHTML = state.catalog.videos.map((item, index) => `<option value="${escapeHtml(item.id)}">视频${index + 1} · ${escapeHtml(item.source_video.split("/").at(-1))}</option>`).join("");
     document.getElementById("annotVideoSelect").value = state.currentVideoId;
+    const selected = currentVideoInfo();
+    if (selected) document.getElementById("cvatSelectedVideo").textContent = `${selected.display_name || selected.id} · ${Number(selected.duration_s || 0).toFixed(1)} 秒`;
   }
   renderVideoSwitcher();
   renderLiveSteps();

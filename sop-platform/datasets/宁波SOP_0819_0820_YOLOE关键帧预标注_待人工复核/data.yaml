@@ -1,0 +1,52 @@
+path: .
+train:
+  - video_nb0819_02/images
+  - video_nb0819_03/images
+  - video_nb0819_04/images
+  - video_nb0819_06/images
+  - video_nb0819_07/images
+  - video_nb0819_08/images
+  - video_nb0820_5420eb4692/images
+  - video_nb0820_67bfbbcda1/images
+  - video_nb0820_a7a6894b33/images
+  - video_nb0820_d4f5edcd5a/images
+  - video_nb0820_e6b55647f4/images
+  - video_nb0820_f8193759d0/images
+val:
+  - video_nb0819_05/images
+  - video_nb0820_aac123f420/images
+test:
+  - video_nb0819_01/images
+  - video_nb0820_27m/images
+review_required: true
+truth_status: pending_human_review
+split_policy: complete_video_no_adjacent_frame_leakage
+names:
+  0: PCB板
+  1: 操作人员手部
+  2: 操作人员
+  3: 电烙铁
+  4: 镊子
+  5: 刷子
+  6: PCB夹具
+  7: 物料盒
+  8: 连接器
+  9: 焊锡丝/焊料
+  10: 产品/外壳
+  11: 电子物料
+  12: 螺钉候选
+  13: 电容候选
+  14: 电感候选
+  15: 电阻候选
+  16: 连接器候选
+  17: 工人工位ROI
+  18: PCB/夹具ROI
+  19: 工具ROI
+  20: 物料ROI
+  21: 成品/外壳ROI
+  22: 取放物料候选
+  23: PCB持取/翻面候选
+  24: 镊子夹取/对位候选
+  25: 焊接操作候选
+  26: 刷涂/清洁候选
+  27: 完成复检候选

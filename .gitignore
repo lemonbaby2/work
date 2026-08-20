@@ -6,6 +6,8 @@
 **/web/analysis/pcb_model_comparison/*/
 **/datasets/*/images/
 **/datasets/*/labels/
+**/datasets/**/images/
+**/datasets/**/labels/
 **/datasets/**/manifest.jsonl
 **/runs/
 **/runtime/*.sqlite3

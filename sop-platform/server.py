@@ -279,7 +279,7 @@ def db_record_cvat_task(payload: dict[str, object], result: dict[str, object]) -
         "dataset_id": str(payload.get("dataset_id") or ""),
         "line_id": str(payload.get("line_id") or ""),
         "mode": str(result.get("mode") or "link"),
-        "status": "已创建" if cvat_task_id is not None else "待配置令牌",
+        "status": str(result.get("status") or ("已创建" if cvat_task_id is not None else "待配置令牌")),
         "url": str(result["url"]),
         "labels": [str(item) for item in (payload.get("labels") or [])],
         "created_at": now,
@@ -556,11 +556,14 @@ class LiveCameraService:
         self.model_path = Path(os.getenv("SOP_CAMERA_MODEL", str(default_model)))
         self.device = os.getenv("SOP_CAMERA_DEVICE", "0")
         self.confidence = float(os.getenv("SOP_CAMERA_CONFIDENCE", "0.35"))
-        self.max_fps = float(os.getenv("SOP_CAMERA_MAX_FPS", "12"))
-        link2c = "Insta360" in self.source
-        self.width = int(os.getenv(f"SOP_CAMERA_WIDTH_{self.camera_id}", os.getenv("SOP_CAMERA_WIDTH", "1920" if link2c else "1280")))
-        self.height = int(os.getenv(f"SOP_CAMERA_HEIGHT_{self.camera_id}", os.getenv("SOP_CAMERA_HEIGHT", "1080" if link2c else "720")))
+        self.max_fps = float(os.getenv("SOP_CAMERA_MAX_FPS", "15"))
+        self.inference_fps = max(0.5, float(os.getenv("SOP_CAMERA_INFERENCE_FPS", "5")))
+        self.width = int(os.getenv(f"SOP_CAMERA_WIDTH_{self.camera_id}", os.getenv("SOP_CAMERA_WIDTH", "1280")))
+        self.height = int(os.getenv(f"SOP_CAMERA_HEIGHT_{self.camera_id}", os.getenv("SOP_CAMERA_HEIGHT", "720")))
         self.capture_fps = float(os.getenv(f"SOP_CAMERA_CAPTURE_FPS_{self.camera_id}", "30"))
+        self.gpu_wait_timeout = max(0.0, float(os.getenv("SOP_CAMERA_GPU_WAIT_MS", "25")) / 1000.0)
+        self.read_failure_limit = max(2, int(os.getenv("SOP_CAMERA_READ_FAILURE_LIMIT", "12")))
+        self.reconnect_delay = max(0.2, float(os.getenv("SOP_CAMERA_RECONNECT_DELAY", "1.0")))
         self.stream_width = max(0, int(os.getenv("SOP_CAMERA_STREAM_WIDTH", "960")))
         self.jpeg_quality = min(95, max(40, int(os.getenv("SOP_CAMERA_JPEG_QUALITY", "68"))))
         self.output_root = EVIDENCE_ROOT
@@ -580,6 +583,8 @@ class LiveCameraService:
         self._dropped_frames = 0
         self._capture_fps_ema = 0.0
         self._output_fps_ema = 0.0
+        self._reconnects = 0
+        self._read_failures = 0
         self._latest_jpeg: bytes | None = None
         self._sequence = 0
         self._recording = False
@@ -599,6 +604,7 @@ class LiveCameraService:
             "source": self.source,
             "pixel_format": "MJPG",
             "capture_fps": self.capture_fps,
+            "inference_fps_target": self.inference_fps,
             "stream_width": self.stream_width,
             "jpeg_quality": self.jpeg_quality,
             "device": self.device,
@@ -608,10 +614,14 @@ class LiveCameraService:
             "inference_ms": 0.0,
             "pipeline_ms": 0.0,
             "gpu_wait_ms": 0.0,
+            "inference_age_ms": None,
             "dropped_frames": 0,
+            "read_failures": 0,
+            "reconnects": 0,
             "queue_capacity": 1,
             "queue_depth": 0,
             "buffering_strategy": "latest-frame-mailbox",
+            "scheduler": "15fps-display/5fps-inference/25ms-bounded-gpu-wait/latest-box-reuse",
             "detections": 0,
             "frame": 0,
             "last_frame_at": None,
@@ -629,6 +639,30 @@ class LiveCameraService:
         with self._lock:
             return dict(self._status)
 
+    def _open_capture(self):
+        import cv2
+
+        source = self._source(self.source)
+        if isinstance(source, str) and source.startswith("/dev/"):
+            capture = cv2.VideoCapture(source, cv2.CAP_V4L2)
+        elif isinstance(source, str) and source.startswith(("rtsp://", "rtsps://", "http://", "https://")):
+            capture = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+        else:
+            capture = cv2.VideoCapture(source)
+        if not capture.isOpened():
+            capture.release()
+            raise RuntimeError(f"无法打开摄像头: {self.source}")
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+            capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+        if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+            capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
+        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        capture.set(cv2.CAP_PROP_FPS, min(self.capture_fps or 30, 30))
+        return capture
+
     def start(self) -> None:
         with self._lock:
             if self._status.get("running") and self._thread and self._thread.is_alive() and self._capture_thread and self._capture_thread.is_alive():
@@ -641,25 +675,8 @@ class LiveCameraService:
                     raise RuntimeError(f"摄像头槽位{self.camera_id}尚未绑定视频采集设备")
                 if not self.model_path.exists():
                     raise FileNotFoundError(f"YOLOv11模型不存在: {self.model_path}")
-                source = self._source(self.source)
-                if isinstance(source, str) and source.startswith("/dev/video"):
-                    capture = cv2.VideoCapture(source, cv2.CAP_V4L2)
-                elif isinstance(source, str) and source.startswith(("rtsp://", "rtsps://", "http://", "https://")):
-                    capture = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
-                else:
-                    capture = cv2.VideoCapture(source)
-                if not capture.isOpened():
-                    raise RuntimeError(f"无法打开摄像头: {self.source}")
+                capture = self._open_capture()
                 self._capture = capture
-                capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
-                    capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
-                if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
-                    capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 2000)
-                capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-                capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-                capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-                capture.set(cv2.CAP_PROP_FPS, min(self.capture_fps or 30, 30))
                 if self._model is None or self._loaded_model_path != self.model_path:
                     self._model = YOLO(str(self.model_path))
                     self._loaded_model_path = self.model_path
@@ -672,9 +689,11 @@ class LiveCameraService:
                 self._dropped_frames = 0
                 self._capture_fps_ema = 0.0
                 self._output_fps_ema = 0.0
+                self._read_failures = 0
                 self._status.update({
                     "running": True, "error": None, "started_at": time.time(),
                     "dropped_frames": 0, "queue_depth": 0, "pipeline_ms": 0.0,
+                    "read_failures": 0, "reconnecting": False,
                 })
                 self._generation += 1
                 generation = self._generation
@@ -698,6 +717,12 @@ class LiveCameraService:
             self._latest_raw_frame = None
             self._status["queue_depth"] = 0
             self._condition.notify_all()
+            capture_thread = self._capture_thread
+            inference_thread = self._thread
+        current = threading.current_thread()
+        for thread in (capture_thread, inference_thread):
+            if thread and thread is not current and thread.is_alive():
+                thread.join(timeout=3.0)
 
     def start_recording(self) -> dict[str, object]:
         with self._lock:
@@ -768,27 +793,71 @@ class LiveCameraService:
 
     def _capture_loop(self, generation: int) -> None:
         previous_at = 0.0
-        capture = None
+        capture = self._capture
+        consecutive_failures = 0
         while True:
             with self._lock:
-                capture = self._capture
-                if generation != self._generation or not self._status.get("running") or capture is None:
+                if generation != self._generation or not self._status.get("running"):
                     break
+                capture = self._capture
+            if capture is None:
+                try:
+                    capture = self._open_capture()
+                except Exception as exc:
+                    with self._condition:
+                        self._status.update({
+                            "running": True,
+                            "reconnecting": True,
+                            "error": f"摄像头重连中: {exc}",
+                        })
+                        self._condition.notify_all()
+                    time.sleep(self.reconnect_delay)
+                    continue
+                with self._condition:
+                    if generation != self._generation or not self._status.get("running"):
+                        capture.release()
+                        break
+                    self._capture = capture
+                    self._reconnects += 1
+                    consecutive_failures = 0
+                    previous_at = 0.0
+                    self._status.update({
+                        "reconnecting": False,
+                        "reconnects": self._reconnects,
+                        "error": None,
+                    })
+                    self._condition.notify_all()
             try:
                 ok, frame = capture.read()
             except Exception as exc:
-                with self._lock:
-                    if generation == self._generation:
-                        self._status.update({"running": False, "error": f"摄像头读取异常或正在重枚举: {exc}"})
-                    self._condition.notify_all()
-                break
+                ok, frame = False, None
+                failure_message = f"摄像头坏帧或正在重枚举: {exc}"
+            else:
+                failure_message = "摄像头返回空帧"
             captured_at = time.perf_counter()
-            if not ok:
-                with self._lock:
-                    if self._status.get("running"):
-                        self._status.update({"running": False, "error": "摄像头读取失败或已断开"})
+            if not ok or frame is None or getattr(frame, "size", 0) == 0:
+                consecutive_failures += 1
+                self._read_failures += 1
+                with self._condition:
+                    self._status.update({
+                        "read_failures": self._read_failures,
+                        "error": f"{failure_message}，正在恢复（{consecutive_failures}/{self.read_failure_limit}）",
+                    })
                     self._condition.notify_all()
-                break
+                if consecutive_failures < self.read_failure_limit:
+                    time.sleep(0.03)
+                    continue
+                with self._condition:
+                    if self._capture is capture:
+                        capture.release()
+                        self._capture = None
+                    self._status["reconnecting"] = True
+                    self._condition.notify_all()
+                capture = None
+                consecutive_failures = 0
+                time.sleep(self.reconnect_delay)
+                continue
+            consecutive_failures = 0
             with self._condition:
                 if generation != self._generation or not self._status.get("running") or self._capture is not capture:
                     break
@@ -805,6 +874,8 @@ class LiveCameraService:
                     "capture_fps_actual": round(self._capture_fps_ema, 1),
                     "dropped_frames": self._dropped_frames,
                     "queue_depth": 1,
+                    "reconnecting": False,
+                    "error": None,
                 })
                 self._condition.notify_all()
         with self._lock:
@@ -817,7 +888,11 @@ class LiveCameraService:
         import cv2
 
         last_output_at = 0.0
+        last_inference_at = 0.0
         last_raw_sequence = 0
+        cached_detections: list[dict[str, object]] = []
+        inference_ms = 0.0
+        gpu_wait_ms = 0.0
         while True:
             loop_started = time.perf_counter()
             with self._condition:
@@ -827,7 +902,7 @@ class LiveCameraService:
                 )
                 capture = self._capture
                 model = self._model
-                if generation != self._generation or not self._status.get("running") or capture is None or model is None or self._raw_sequence <= last_raw_sequence:
+                if generation != self._generation or not self._status.get("running") or model is None or self._raw_sequence <= last_raw_sequence:
                     if generation != self._generation or not self._status.get("running"):
                         break
                     continue
@@ -838,29 +913,43 @@ class LiveCameraService:
                 self._status["queue_depth"] = 0
             if frame is None:
                 continue
-            wait_started = time.perf_counter()
-            CAMERA_INFERENCE_GATE.acquire()
-            gpu_wait_ms = (time.perf_counter() - wait_started) * 1000
-            with self._lock:
-                if generation != self._generation or not self._status.get("running") or self._capture is not capture:
-                    CAMERA_INFERENCE_GATE.release()
-                    break
-            started = time.perf_counter()
+            now = time.perf_counter()
+            should_infer = not cached_detections or now - last_inference_at >= 1.0 / self.inference_fps
+            annotated = frame.copy()
+            if should_infer:
+                wait_started = time.perf_counter()
+                acquired_inference_slot = CAMERA_INFERENCE_GATE.acquire(timeout=self.gpu_wait_timeout)
+                gpu_wait_ms = (time.perf_counter() - wait_started) * 1000
+                if acquired_inference_slot:
+                    started = time.perf_counter()
+                    try:
+                        quantize = None if self.device == "cpu" else 16
+                        result = model.predict(source=frame, imgsz=640, conf=self.confidence, device=self.device, quantize=quantize, max_det=50, verbose=False)[0]
+                        inference_ms = (time.perf_counter() - started) * 1000
+                        cached_detections = []
+                        names = getattr(result, "names", {}) or {}
+                        for box in result.boxes or []:
+                            class_id = int(box.cls.item())
+                            cached_detections.append({
+                                "xyxy": [int(value) for value in box.xyxy[0].tolist()],
+                                "label": str(names.get(class_id, class_id)),
+                                "confidence": float(box.conf.item()),
+                            })
+                        last_inference_at = time.perf_counter()
+                    except Exception as exc:
+                        with self._condition:
+                            self._status["inference_error"] = str(exc)
+                            self._condition.notify_all()
+                    finally:
+                        CAMERA_INFERENCE_GATE.release()
+            for detection in cached_detections:
+                x1, y1, x2, y2 = detection["xyxy"]
+                color = (66, 214, 174)
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+                label = f"{detection['label']} {float(detection['confidence']):.2f}"
+                cv2.putText(annotated, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 1, cv2.LINE_AA)
             try:
-                quantize = None if self.device == "cpu" else 16
-                result = model.predict(source=frame, imgsz=640, conf=self.confidence, device=self.device, quantize=quantize, max_det=50, verbose=False)[0]
-            except Exception as exc:
-                with self._lock:
-                    if generation == self._generation:
-                        self._status.update({"running": False, "error": f"YOLO推理失败: {exc}"})
-                        self._condition.notify_all()
-                break
-            finally:
-                CAMERA_INFERENCE_GATE.release()
-            try:
-                annotated = result.plot()
-                detections = len(result.boxes) if result.boxes is not None else 0
-                inference_ms = (time.perf_counter() - started) * 1000
+                detections = len(cached_detections)
                 stream_frame = annotated
                 if self.stream_width and annotated.shape[1] > self.stream_width:
                     stream_height = round(annotated.shape[0] * self.stream_width / annotated.shape[1])
@@ -876,7 +965,7 @@ class LiveCameraService:
                 last_output_at = completed_at
                 last_raw_sequence = raw_sequence
                 with self._lock:
-                    if generation != self._generation or not self._status.get("running") or self._capture is not capture:
+                    if generation != self._generation or not self._status.get("running"):
                         break
                     self._latest_jpeg = buffer.tobytes()
                     self._sequence += 1
@@ -902,6 +991,8 @@ class LiveCameraService:
                         "inference_ms": round(inference_ms, 1),
                         "pipeline_ms": round(pipeline_ms, 1),
                         "gpu_wait_ms": round(gpu_wait_ms, 1),
+                        "inference_age_ms": round((completed_at - last_inference_at) * 1000, 1) if last_inference_at else None,
+                        "inference_fps_target": self.inference_fps,
                         "fps": round(self._output_fps_ema, 1),
                         "output_fps": round(self._output_fps_ema, 1),
                         "capture_fps_actual": round(self._capture_fps_ema, 1),
@@ -911,7 +1002,7 @@ class LiveCameraService:
                         "stream_output": f"{stream_frame.shape[1]}x{stream_frame.shape[0]}",
                         "last_frame_at": time.time(),
                         "recording": self._recording,
-                        "error": None,
+                        "error": self._status.get("error") if self._status.get("reconnecting") else None,
                     })
                     self._condition.notify_all()
             except Exception as exc:
@@ -1111,7 +1202,37 @@ def cvat_task_create(payload: dict[str, object]) -> dict[str, object]:
     with build_opener(ProxyHandler({})).open(request, timeout=8) as response:
         result = json.loads(response.read().decode("utf-8"))
     task_id = result.get("id")
-    return {"ok": True, "mode": "api", "task_id": task_id, "url": f"{url}/tasks/{task_id}", "message": "CVAT任务已创建"}
+    video_id = str(payload.get("video_id") or "").strip()
+    upload_video = bool(payload.get("upload_video", True)) and video_id
+    status = "已创建"
+    message = "CVAT任务已创建"
+    if upload_video and task_id is not None:
+        info = video_info(video_id)
+        if info is None:
+            status, message = "任务已创建/视频不存在", f"CVAT任务已创建，但平台视频不存在: {video_id}"
+        else:
+            video_path = (WEB_ROOT / str(info.get("source_video") or info.get("video") or "")).resolve()
+            if not video_path.is_file() or WEB_ROOT.resolve() not in video_path.parents:
+                status, message = "任务已创建/待上传", "CVAT任务已创建，但整段代理视频尚未生成"
+            else:
+                try:
+                    import requests
+
+                    with video_path.open("rb") as handle:
+                        response = requests.post(
+                            f"{api_url}/api/tasks/{task_id}/data",
+                            headers={"Authorization": f"Token {token}"},
+                            data={"image_quality": "90", "use_zip_chunks": "true"},
+                            files={"client_files[0]": (video_path.name, handle, "video/mp4")},
+                            timeout=(15, 1800),
+                        )
+                    response.raise_for_status()
+                    status = "整段视频处理中"
+                    message = f"CVAT任务已创建，整段视频 {video_path.name} 已提交"
+                except Exception as exc:
+                    status = "任务已创建/视频上传失败"
+                    message = f"CVAT任务已创建，但整段视频上传失败: {exc}"
+    return {"ok": True, "mode": "api", "task_id": task_id, "url": f"{url}/tasks/{task_id}", "status": status, "message": message}
 
 
 def production_lines() -> list[dict[str, object]]:
@@ -1779,27 +1900,50 @@ class SOPHandler(SimpleHTTPRequestHandler):
             completed = sum(requested_time >= float(item["end_s"]) for item in video["steps"])
             dynamic = record.get("detections", [])
             fasteners = candidate_record.get("candidates", [])
-            has_tool = any(item.get("label") == "电动紧固工具" for item in dynamic)
+            detected_labels = sorted({str(item.get("label") or "未分类目标") for item in dynamic + fasteners})
+            tool_labels = {"电动紧固工具", "电烙铁", "镊子", "刷子"}
+            has_tool = any(item.get("label") in tool_labels for item in dynamic)
             has_hand = any(item.get("label") == "操作人员手部" for item in dynamic)
+            has_pcb = any("PCB" in str(item.get("label") or "") for item in dynamic)
+            expected = ["操作人员手部"]
+            if ACTIVE_LINE_ID == "pcb":
+                expected.append("PCB/夹具")
+            if any(keyword in step["label"] for keyword in ("焊", "紧固", "工具")):
+                expected.append("工具")
+            missing = []
+            if not has_hand:
+                missing.append("操作人员手部")
+            if "PCB/夹具" in expected and not has_pcb:
+                missing.append("PCB或夹具")
+            if "工具" in expected and not has_tool:
+                missing.append("当前工序工具")
             confidence_values = [float(item.get("confidence") or 0) for item in dynamic + fasteners]
             evidence_score = round(100 * max(confidence_values), 1) if confidence_values else 0.0
-            risk_score = 62 + (8 if not has_tool and "紧固" in step["label"] else 0)
+            evidence_completeness = max(0, round(100 * (len(expected) - len(missing)) / max(len(expected), 1)))
+            risk_score = min(95, 38 + 16 * len(missing) + (12 if not dynamic else 0))
             reasons = [
                 f"当前应执行 {step['id']}：{step['label']}",
-                f"已加载{len(record.get('parts', []))}个业务零件区域、{len(dynamic)}个动态目标、{len(fasteners)}个紧固点候选",
-                "视觉证据只用于步骤判断；真实扭矩和MES回执尚未接入",
+                f"当前画面载入{len(record.get('parts', []))}个工位区域、{len(dynamic)}个目标框、{len(fasteners)}个小目标候选",
+                f"待补证据：{'、'.join(missing) if missing else '视觉必需项已看到'}",
+                "自动框仅用于提示和复核；质量放行仍需工艺确认、扭矩/焊接结果与MES回执",
             ]
-            action = "保持工位HOLD，等待工具控制器与MES确认"
-            if "紧固" in step["label"] and not has_tool:
-                action = "当前是紧固步骤但未稳定看到工具，请检查遮挡、相机角度或工具报文"
+            action = "质量员复核当前候选框；工艺证据与MES齐全前保持HOLD"
+            if missing:
+                action = f"现场人员先确认{'、'.join(missing)}，必要时调整遮挡或相机角度"
+            visible_dynamic = sorted(dynamic, key=lambda item: float(item.get("confidence") or 1 if item.get("confidence") is None else item.get("confidence")), reverse=True)[:18]
+            visible_candidates = sorted(fasteners, key=lambda item: float(item.get("confidence") or 0), reverse=True)[:10]
             self.send_json({
                 "ok": True, "video_id": video_id, "time_s": round(requested_time, 2), "frame": index,
                 "step": step, "completed_steps": completed, "visual_state": "PASS" if completed >= len(video["steps"]) else "RUNNING",
                 "release": "HOLD", "risk_score": min(risk_score, 100), "risk_level": "中高" if risk_score >= 65 else "中",
-                "evidence_score": evidence_score, "objects": {"business_regions": len(record.get("parts", [])), "dynamic": len(dynamic), "fastener_candidates": len(fasteners), "hand_seen": has_hand, "tool_seen": has_tool},
+                "evidence_score": evidence_score, "evidence_completeness": evidence_completeness,
+                "objects": {"business_regions": len(record.get("parts", [])), "dynamic": len(dynamic), "fastener_candidates": len(fasteners), "hand_seen": has_hand, "tool_seen": has_tool, "pcb_seen": has_pcb},
+                "detections": visible_dynamic, "candidates": visible_candidates,
+                "frame_size": {"width": video_size(video_id)[0], "height": video_size(video_id)[1]},
+                "detected_labels": detected_labels, "expected_labels": expected, "missing_evidence": missing,
                 "reasons": reasons, "recommended_action": action,
-                "decision_chain": ["目标检测", "跨帧跟踪", "工位区域", "步骤顺序", "紧固质量", "MES确认", "最终放行"],
-                "truth_notice": "紧固点为自动预标注候选，人工复核前不计入螺钉合格数量",
+                "decision_chain": ["相机/视频", "候选框", "工位ROI", "当前工序", "证据缺口", "人工处置", "MES留痕"],
+                "truth_notice": "所有自动框、ROI、小目标和动作均为候选；人工确认前不计入合格数量",
             })
             return
         if path == "/api/health":
@@ -2122,7 +2266,8 @@ class SOPHandler(SimpleHTTPRequestHandler):
             if path == "/api/camera/start":
                 query = parse_qs(urlparse(self.path).query)
                 selected = query.get("camera", ["all"])[0]
-                services = LIVE_CAMERAS.values() if selected == "all" else [camera_service(int(selected))]
+                services = ([service for service in LIVE_CAMERAS.values() if service.source]
+                            if selected == "all" else [camera_service(int(selected))])
                 results = []
                 for service in services:
                     try:

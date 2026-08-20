@@ -1,0 +1,162 @@
+{
+  "id": "video_nb0820_f8193759d0",
+  "display_name": "8月20日俯视装配｜f8193759d0d1dc02b7be01c2a666de36.mp4",
+  "source": "/home/xjai/Desktop/sop xjai/视频数据/宁波SoP项目/8月20号/f8193759d0d1dc02b7be01c2a666de36.mp4",
+  "video": "media/local/ningbo_sop/video_nb0820_f8193759d0_720p.mp4",
+  "source_video": "media/local/ningbo_sop/video_nb0820_f8193759d0_720p.mp4",
+  "frames": 8384,
+  "fps": 14.2489,
+  "resolution": "2304x1296",
+  "duration_s": 588.395,
+  "algorithm": "YOLOE开放词汇关键帧 + ROI切片小目标 + 固定机位邻近传播 + 动作关系候选",
+  "parts": [
+    {
+      "label": "工人工位区",
+      "class": "工人工位ROI",
+      "roi": [
+        0.0,
+        0.08,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "label": "PCB/夹具操作区",
+      "class": "PCB/夹具ROI",
+      "roi": [
+        0.14,
+        0.25,
+        0.7,
+        0.97
+      ]
+    },
+    {
+      "label": "工具与操作区",
+      "class": "工具ROI",
+      "roi": [
+        0.52,
+        0.18,
+        0.98,
+        0.92
+      ]
+    },
+    {
+      "label": "料盒与电子物料区",
+      "class": "物料ROI",
+      "roi": [
+        0.15,
+        0.0,
+        0.7,
+        0.43
+      ]
+    },
+    {
+      "label": "产品外壳区",
+      "class": "成品/外壳ROI",
+      "roi": [
+        0.0,
+        0.22,
+        0.42,
+        1.0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "S01",
+      "label": "取料与工位准备候选",
+      "start_s": 0.0,
+      "end_s": 147.099,
+      "duration_s": 147.099,
+      "roi": [
+        0.14,
+        0.25,
+        0.7,
+        0.97
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    },
+    {
+      "id": "S02",
+      "label": "PCB/夹具对位候选",
+      "start_s": 147.099,
+      "end_s": 294.197,
+      "duration_s": 147.099,
+      "roi": [
+        0.14,
+        0.25,
+        0.7,
+        0.97
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    },
+    {
+      "id": "S03",
+      "label": "装配/工具操作候选",
+      "start_s": 294.197,
+      "end_s": 441.296,
+      "duration_s": 147.099,
+      "roi": [
+        0.14,
+        0.25,
+        0.7,
+        0.97
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    },
+    {
+      "id": "S04",
+      "label": "完成复检候选",
+      "start_s": 441.296,
+      "end_s": 588.395,
+      "duration_s": 147.099,
+      "roi": [
+        0.14,
+        0.25,
+        0.7,
+        0.97
+      ],
+      "source": "四等分候选时间段，待工艺人员按真实工序修订"
+    }
+  ],
+  "snapshots": [
+    "snapshots/video_nb0820_f8193759d0/S01_0074秒.jpg",
+    "snapshots/video_nb0820_f8193759d0/S02_0221秒.jpg",
+    "snapshots/video_nb0820_f8193759d0/S03_0368秒.jpg",
+    "snapshots/video_nb0820_f8193759d0/S04_0515秒.jpg"
+  ],
+  "annotation_source": "data/video_nb0820_f8193759d0_frame_annotations.jsonl",
+  "candidate_source": "data/video_nb0820_f8193759d0_fine_object_candidates.jsonl",
+  "keyframes": 589,
+  "small_object_interval_s": 5.0,
+  "clarity_score": 567.63,
+  "sharpened_proxy": false,
+  "candidate_counts": {
+    "工人工位ROI": 589,
+    "PCB/夹具ROI": 589,
+    "工具ROI": 589,
+    "物料ROI": 589,
+    "成品/外壳ROI": 589,
+    "物料盒": 764,
+    "产品/外壳": 1176,
+    "电子物料": 2240,
+    "电容候选": 353,
+    "电感候选": 354,
+    "连接器候选": 289,
+    "电阻候选": 354,
+    "操作人员": 93,
+    "PCB板": 134,
+    "电烙铁": 276,
+    "连接器": 823,
+    "操作人员手部": 48,
+    "取放物料候选": 44,
+    "焊锡丝/焊料": 69,
+    "螺钉候选": 9,
+    "PCB持取/翻面候选": 3,
+    "镊子": 1,
+    "镊子夹取/对位候选": 1
+  },
+  "production_release": "HOLD",
+  "truth_policy": "自动框、ROI、动作和传播结果均为待人工复核候选，不是生产真值。",
+  "processing_seconds": 62.55
+}
