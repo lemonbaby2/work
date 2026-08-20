@@ -10,6 +10,8 @@ SOURCE_0265="$PROJECT_ROOT/视频数据/8月19号/DJI_20260819151908_0265_D.MP4"
 mkdir -p "$DESTINATION"
 
 required=(
+  "$ROOT/runtime/SOP平台.exe"
+  "$ROOT/runtime/windows-python-embed/python-3.12.10-embed-amd64.zip"
   "$ROOT/models/yolo26n_PCB插装0264_50轮_待人工验收.pt"
   "$ROOT/models/yolo26n_PCB插装0265_50轮_待人工验收.pt"
   "$ROOT/models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt"
@@ -21,6 +23,31 @@ required=(
 for path in "${required[@]}"; do
   [[ -f "$path" ]] || { echo "Required delivery artifact is missing: $path" >&2; exit 1; }
 done
+
+sqlite3 "$ROOT/runtime/sop_annotations.sqlite3" ".timeout 30000" ".backup '$DESTINATION/05_sop_annotations.sqlite3'"
+sqlite3 "$DESTINATION/05_sop_annotations.sqlite3" "PRAGMA quick_check;" > "$DESTINATION/05_数据库完整性检查.txt"
+
+WINDOWS_STAGE="$DESTINATION/.windows_app_stage"
+rm -rf "$WINDOWS_STAGE"
+mkdir -p "$WINDOWS_STAGE/app/models" "$WINDOWS_STAGE/app/runtime" "$WINDOWS_STAGE/app/web/media/local"
+rsync -a "$ROOT/" "$WINDOWS_STAGE/app/" \
+  --exclude='/datasets' --exclude='/runs' --exclude='/runtime' --exclude='/web/media' \
+  --exclude='/models/*.pt' --exclude='/models/*.pth' --exclude='/models/*.onnx' --exclude='/models/*.ts' \
+  --exclude='/*.pt' --exclude='/*.pth' --exclude='/*.onnx' --exclude='/*.ts' \
+  --exclude='/weights' --exclude='/__pycache__' --exclude='*.pyc'
+cp "$ROOT/runtime/SOP平台.exe" "$WINDOWS_STAGE/app/SOP平台.exe"
+unzip -q "$ROOT/runtime/windows-python-embed/python-3.12.10-embed-amd64.zip" -d "$WINDOWS_STAGE/app/python-runtime"
+cp "$ROOT/models/yolo26n_PCB插装0264_50轮_待人工验收.pt" "$WINDOWS_STAGE/app/models/"
+cp "$ROOT/models/yolo26n_PCB插装0265_50轮_待人工验收.pt" "$WINDOWS_STAGE/app/models/"
+cp "$ROOT/models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt" "$WINDOWS_STAGE/app/models/"
+cp "$ROOT/web/media/local/DJI_20260819145537_0264_D_720p.mp4" "$WINDOWS_STAGE/app/web/media/local/"
+cp "$ROOT/web/media/local/DJI_20260819151908_0265_D_720p.mp4" "$WINDOWS_STAGE/app/web/media/local/"
+cp "$DESTINATION/05_sop_annotations.sqlite3" "$WINDOWS_STAGE/app/runtime/sop_annotations.sqlite3"
+(
+  cd "$WINDOWS_STAGE"
+  zip -q -r "$DESTINATION/00_Windows_SOP平台_可运行应用.zip" app
+)
+rm -rf "$WINDOWS_STAGE"
 
 tar -C "$ROOT" -czf "$DESTINATION/01_SOP平台源码_soplzp0820.tar.gz" \
   --exclude='./datasets/*/images' --exclude='./datasets/*/labels' --exclude='./runs' \
@@ -47,9 +74,6 @@ tar -C "$ROOT" -czf "$DESTINATION/04_网页代理视频_0264_0265.tar.gz" \
   web/media/local/DJI_20260819145537_0264_D_720p.mp4 \
   web/media/local/DJI_20260819151908_0265_D_720p.mp4
 
-sqlite3 "$ROOT/runtime/sop_annotations.sqlite3" ".timeout 30000" ".backup '$DESTINATION/05_sop_annotations.sqlite3'"
-sqlite3 "$DESTINATION/05_sop_annotations.sqlite3" "PRAGMA quick_check;" > "$DESTINATION/05_数据库完整性检查.txt"
-
 {
   echo "GitHub: https://github.com/lemonbaby2/work/tree/soplzp0820"
   echo "Branch: soplzp0820"
@@ -60,7 +84,7 @@ sqlite3 "$DESTINATION/05_sop_annotations.sqlite3" "PRAGMA quick_check;" > "$DEST
 
 (
   cd "$DESTINATION"
-  sha256sum ./* > SHA256SUMS.txt
+  find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
 )
 sha256sum "$SOURCE_0264" "$SOURCE_0265" > "$DESTINATION/SHA256SUMS_4K原始视频.txt"
 echo "$DESTINATION"

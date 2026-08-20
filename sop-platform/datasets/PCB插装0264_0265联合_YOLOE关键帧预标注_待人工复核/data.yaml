@@ -1,0 +1,17 @@
+path: /home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0264_0265联合_YOLOE关键帧预标注_待人工复核
+train:
+  - /home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0264_YOLOE关键帧预标注_待人工复核/images/train
+  - /home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核/images/train
+val: /home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核/images/val
+test: /home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核/images/test
+names:
+  0: PCB板
+  1: 操作人员手部
+  2: 连接器/插件
+  3: 芯片
+  4: 电容
+  5: 料盒
+  6: 装配治具
+  7: 烙铁/焊枪
+  8: 取料动作候选
+  9: 插装/按压动作候选

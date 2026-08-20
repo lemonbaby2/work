@@ -1,0 +1,40 @@
+{
+  "verified_at_utc": "2026-08-20 14:17:08",
+  "application": {
+    "name": "SOP平台.exe",
+    "type": "native Windows WinForms launcher",
+    "backend_runtime": "Python 3.12.10 official embeddable runtime",
+    "startup_policy": "automatically start the local backend and poll /api/health",
+    "production_release": "HOLD"
+  },
+  "targets": [
+    {
+      "host": "192.168.1.117",
+      "user": "DELL",
+      "path": "D:\\soplzp0820_20260820\\app\\SOP平台.exe",
+      "exe_size": 14848,
+      "exe_sha256": "ED2CA4EF53986FE000B12F01ADF6C5EE8BB14BCD86910E399E8CDF41F7A7033C",
+      "exe_started_backend": true,
+      "health_http_status": 200
+    },
+    {
+      "host": "192.168.1.128",
+      "user": "lzp",
+      "path": "D:\\soplzp0820_20260820\\app\\SOP平台.exe",
+      "exe_size": 14848,
+      "exe_sha256": "57A1896C61AE0C6FE9B381516C0004447961AAD31F91D2EDB41D5F611E08A4E7",
+      "exe_started_backend": true,
+      "health_http_status": 200
+    }
+  ],
+  "source_video_sha256": {
+    "DJI_20260819145537_0264_D.MP4": "BBDE3D811E8C5D8643FCA718A8852C37B0E1A401D2E3686A0525816E2BC2074B",
+    "DJI_20260819151908_0265_D.MP4": "3C2DEDBD1C4B5C62BBF187982B794E9D8B79410E78C78141A503B08C41573CA4"
+  },
+  "source_video_hash_match_on_both_targets": true,
+  "notes": [
+    "Passwords are intentionally excluded from source code, logs and this report.",
+    "The EXE keeps models, videos and SQLite data as replaceable external assets.",
+    "GPU inference requires a Windows CUDA/PyTorch environment; annotation, persistence and web viewing use the bundled runtime."
+  ]
+}

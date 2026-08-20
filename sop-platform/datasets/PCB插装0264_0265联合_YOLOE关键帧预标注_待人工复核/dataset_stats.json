@@ -1,0 +1,11 @@
+{
+  "dataset": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0264_0265联合_YOLOE关键帧预标注_待人工复核",
+  "train_sources": [
+    "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0264_YOLOE关键帧预标注_待人工复核",
+    "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核"
+  ],
+  "validation_source": "station4/1.mp4 and station4/2.mp4",
+  "test_source": "station4/3.mp4 and station4/6.mp4",
+  "split_policy": "Complete source videos are isolated by split; no adjacent-frame leakage.",
+  "truth_boundary": "All source labels are teacher candidates pending human review."
+}
