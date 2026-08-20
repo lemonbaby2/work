@@ -1,0 +1,30 @@
+{
+  "station_id": "NB-IP-SOP-01",
+  "station_name": "仪表板总成装配工位",
+  "product_model": "宁波仪表板零部件演示件",
+  "recipe_id": "IP-ASSEMBLY-V1",
+  "recipe_version": "2026.08.16-demo",
+  "camera_plan": {
+    "recommended": 2,
+    "description": "1台俯视覆盖总成，1台侧视覆盖螺钉孔位；本次使用单段手持视频验证界面流程"
+  },
+  "part_regions": [
+    {"id": "P01", "label": "仪表板骨架总成", "roi": [0.02, 0.05, 0.98, 0.94]},
+    {"id": "P02", "label": "前除霜风道组件", "roi": [0.08, 0.24, 0.79, 0.63]},
+    {"id": "P03", "label": "中央风道/模块", "roi": [0.48, 0.27, 0.78, 0.68]},
+    {"id": "P04", "label": "线束接插件区域", "roi": [0.69, 0.16, 0.96, 0.55]}
+  ],
+  "steps": [
+    {"id": "S01", "label": "确认仪表板骨架到位", "start_s": 0.0, "end_s": 10.0, "roi": [0.03, 0.08, 0.97, 0.92]},
+    {"id": "S02", "label": "放置前除霜风道", "start_s": 10.0, "end_s": 23.0, "roi": [0.08, 0.22, 0.82, 0.68]},
+    {"id": "S03", "label": "风道卡扣压合", "start_s": 23.0, "end_s": 35.0, "roi": [0.42, 0.25, 0.78, 0.71]},
+    {"id": "S04", "label": "左侧紧固作业", "start_s": 35.0, "end_s": 50.0, "roi": [0.55, 0.16, 0.94, 0.61]},
+    {"id": "S05", "label": "右侧紧固作业", "start_s": 50.0, "end_s": 64.0, "roi": [0.32, 0.25, 0.73, 0.76]},
+    {"id": "S06", "label": "完成检查并流转", "start_s": 64.0, "end_s": 77.6, "roi": [0.03, 0.08, 0.97, 0.92]}
+  ],
+  "release_policy": {
+    "visual_sequence_required": true,
+    "torque_message_required": true,
+    "mes_ack_required": true
+  }
+}

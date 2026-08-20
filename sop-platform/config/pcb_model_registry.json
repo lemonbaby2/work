@@ -1,0 +1,39 @@
+{
+  "test_protocol": "同一工位4完整视频测试集、imgsz=960、相同阈值、DGX Spark CUDA 0",
+  "truth_boundary": "当前精度衡量与YOLOE教师候选的一致性，不是量产真值精度；人工冻结测试集验收前全部保持HOLD。",
+  "models": [
+    {
+      "id": "pcb-0265-yolo26n",
+      "name": "YOLO26N · 0265单视频",
+      "weight": "models/yolo26n_PCB插装0265_50轮_待人工验收.pt",
+      "report": "qa/pcb_0265_training_report.json",
+      "results_csv": "runs/pcb_0265_yolo26/PCB插装0265_50轮/results.csv",
+      "chart": "analysis/pcb_model_comparison/0265_results.png",
+      "dataset": "PCB插装0265_YOLOE关键帧预标注_待人工复核",
+      "epochs": 50,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-yolo26n",
+      "name": "YOLO26N · 0264单视频",
+      "weight": "models/yolo26n_PCB插装0264_50轮_待人工验收.pt",
+      "report": "qa/pcb_0264_training_report.json",
+      "results_csv": "runs/pcb_0265_yolo26/PCB插装0264_50轮/results.csv",
+      "chart": "analysis/pcb_model_comparison/0264_results.png",
+      "dataset": "PCB插装0264_YOLOE关键帧预标注_待人工复核",
+      "epochs": 50,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-0265-joint-yolo26n",
+      "name": "YOLO26N · 0264+0265联合",
+      "weight": "models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt",
+      "report": "qa/pcb_0264_0265_joint_training_report.json",
+      "results_csv": "runs/pcb_0265_yolo26/PCB插装0264_0265联合50轮/results.csv",
+      "chart": "analysis/pcb_model_comparison/joint_results.png",
+      "dataset": "PCB插装0264_0265联合_YOLOE关键帧预标注_待人工复核",
+      "epochs": 50,
+      "release": "HOLD"
+    }
+  ]
+}

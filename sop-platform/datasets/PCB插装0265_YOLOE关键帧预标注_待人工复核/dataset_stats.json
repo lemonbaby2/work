@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-08-20 13:05:08",
+  "model": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/models/yoloe-26s-seg.pt",
+  "sources": [
+    {
+      "source_id": "video_0265",
+      "split": "train",
+      "decoded_frames": 19778,
+      "selected_keyframes": 1182,
+      "fps": 30.0,
+      "duration_s": 659.267
+    },
+    {
+      "source_id": "station4_1",
+      "split": "val",
+      "decoded_frames": 344,
+      "selected_keyframes": 83,
+      "fps": 14.999563966163775,
+      "duration_s": 22.934
+    },
+    {
+      "source_id": "station4_2",
+      "split": "val",
+      "decoded_frames": 1794,
+      "selected_keyframes": 321,
+      "fps": 15.000250840315056,
+      "duration_s": 119.598
+    },
+    {
+      "source_id": "station4_3",
+      "split": "test",
+      "decoded_frames": 630,
+      "selected_keyframes": 179,
+      "fps": 13.125546897787407,
+      "duration_s": 47.998
+    },
+    {
+      "source_id": "station4_6",
+      "split": "test",
+      "decoded_frames": 3626,
+      "selected_keyframes": 1114,
+      "fps": 13.99648736803505,
+      "duration_s": 259.065
+    }
+  ],
+  "sampled_images": 2879,
+  "annotations": 25531,
+  "class_counts": {
+    "装配治具": 2530,
+    "PCB板": 6055,
+    "料盒": 6971,
+    "电容": 4104,
+    "芯片": 476,
+    "操作人员手部": 2534,
+    "插装/按压动作候选": 1052,
+    "连接器/插件": 9,
+    "取料动作候选": 10,
+    "烙铁/焊枪": 1790
+  },
+  "dataset": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核",
+  "processing_seconds": 65.6,
+  "split_policy": "No adjacent-frame leakage: each source video belongs to exactly one split.",
+  "truth_boundary": "All boxes and action labels are automatic candidates. NG, rare classes, occlusion, direction changes and process boundaries require human review."
+}

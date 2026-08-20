@@ -1,0 +1,25 @@
+# Large local source data and generated media stay on the DGX/IPC data volume.
+视频数据/
+**/web/media/local/
+**/web/media/
+**/web/data/*.jsonl
+**/datasets/*/images/
+**/datasets/*/labels/
+**/datasets/**/manifest.jsonl
+**/runs/
+**/runtime/*.sqlite3
+**/runtime/*.sqlite3-shm
+**/runtime/*.sqlite3-wal
+**/runtime/backups/
+**/runtime/*.jsonl
+**/__pycache__/
+*.pyc
+
+# Generated delivery archives and model weights are distributed separately.
+*.zip
+*.pt
+*.pth
+*.onnx
+*.engine
+*.ts
+**/weights/

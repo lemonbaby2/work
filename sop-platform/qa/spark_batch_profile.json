@@ -1,0 +1,145 @@
+{
+  "generated_at": "2026-08-20 07:18:49",
+  "gpu": "NVIDIA GB10",
+  "cuda_memory_mb": 124610,
+  "profiles": [
+    {
+      "model": "models/yolo26n.pt",
+      "imgsz": 960,
+      "results": [
+        {
+          "batch": 1,
+          "ok": true,
+          "latency_ms": 4.25,
+          "per_image_ms": 4.251,
+          "images_per_second": 235.26,
+          "peak_cuda_mb": 80.3
+        },
+        {
+          "batch": 4,
+          "ok": true,
+          "latency_ms": 14.89,
+          "per_image_ms": 3.722,
+          "images_per_second": 268.69,
+          "peak_cuda_mb": 209.7
+        },
+        {
+          "batch": 8,
+          "ok": true,
+          "latency_ms": 34.8,
+          "per_image_ms": 4.35,
+          "images_per_second": 229.88,
+          "peak_cuda_mb": 381.4
+        },
+        {
+          "batch": 16,
+          "ok": true,
+          "latency_ms": 64.17,
+          "per_image_ms": 4.011,
+          "images_per_second": 249.34,
+          "peak_cuda_mb": 725.1
+        }
+      ],
+      "recommended_realtime_batch": 4,
+      "max_tested_batch": 16,
+      "recommended_training_batch": 8
+    },
+    {
+      "model": "models/yoloe-26s-seg.pt",
+      "imgsz": 960,
+      "results": [
+        {
+          "batch": 1,
+          "ok": true,
+          "latency_ms": 8.67,
+          "per_image_ms": 8.67,
+          "images_per_second": 115.34,
+          "peak_cuda_mb": 168.1
+        },
+        {
+          "batch": 4,
+          "ok": true,
+          "latency_ms": 38.05,
+          "per_image_ms": 9.513,
+          "images_per_second": 105.12,
+          "peak_cuda_mb": 481.9
+        },
+        {
+          "batch": 8,
+          "ok": true,
+          "latency_ms": 80.99,
+          "per_image_ms": 10.124,
+          "images_per_second": 98.77,
+          "peak_cuda_mb": 899.8
+        },
+        {
+          "batch": 16,
+          "ok": true,
+          "latency_ms": 173.12,
+          "per_image_ms": 10.82,
+          "images_per_second": 92.42,
+          "peak_cuda_mb": 1736.7
+        }
+      ],
+      "recommended_realtime_batch": 1,
+      "max_tested_batch": 16,
+      "recommended_training_batch": 8
+    },
+    {
+      "model": "models/yolov8s-worldv2.pt",
+      "imgsz": 960,
+      "results": [
+        {
+          "batch": 1,
+          "ok": true,
+          "latency_ms": 7.13,
+          "per_image_ms": 7.131,
+          "images_per_second": 140.24,
+          "peak_cuda_mb": 140.2
+        },
+        {
+          "batch": 4,
+          "ok": true,
+          "latency_ms": 30.47,
+          "per_image_ms": 7.618,
+          "images_per_second": 131.28,
+          "peak_cuda_mb": 305.1
+        },
+        {
+          "batch": 8,
+          "ok": true,
+          "latency_ms": 66.76,
+          "per_image_ms": 8.345,
+          "images_per_second": 119.84,
+          "peak_cuda_mb": 553.5
+        },
+        {
+          "batch": 16,
+          "ok": true,
+          "latency_ms": 142.66,
+          "per_image_ms": 8.917,
+          "images_per_second": 112.15,
+          "peak_cuda_mb": 1053.7
+        }
+      ],
+      "recommended_realtime_batch": 1,
+      "max_tested_batch": 16,
+      "recommended_training_batch": 8
+    }
+  ],
+  "recommended_training": {
+    "batch": 8,
+    "imgsz": 960,
+    "workers": 2,
+    "amp": true
+  },
+  "training_calibration": {
+    "ok": true,
+    "batch": 8,
+    "imgsz": 960,
+    "elapsed_s": 105.89,
+    "save_dir": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/runs/spark_batch_calibration/batch8_960",
+    "truth_boundary": "只用于Spark batch和吞吐校准，标签是待人工复核预标注，不是量产精度训练。"
+  },
+  "truth_boundary": "batch推荐基于当前Spark和已安装模型；PCB与模塑需导入各自产线真值后重新调参。"
+}

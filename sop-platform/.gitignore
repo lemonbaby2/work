@@ -1,0 +1,12 @@
+web/media/local/
+datasets/*/images/
+datasets/*/labels/
+runs/
+runtime/
+models/*.pt
+models/*.onnx
+models/*.ts
+weights/
+__pycache__/
+*.pyc
+*.zip

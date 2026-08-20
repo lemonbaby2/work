@@ -1,0 +1,17 @@
+path: E:/宁波项目/SOP分析平台_老板汇报版/datasets/新增两视频_YOLOE26_SAHI细粒度预标注_待人工复核
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: 仪表板总成
+  1: 仪表板骨架
+  2: 饰板总成
+  3: 线束
+  4: 电气接插件
+  5: 电动紧固工具
+  6: 操作人员手部
+  7: 螺钉头候选
+  8: 螺栓头候选
+  9: 塑料卡扣候选
+  10: 线束插头候选
+  11: 紧固孔候选

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "yolo26n",
+    "name": "YOLO26N",
+    "task": "目标检测",
+    "role": "工位实时基线",
+    "model_path": "models/yolo26n.pt",
+    "recommended_for": ["汽车零部件", "螺丝/卡扣", "PCB元器件"],
+    "note": "优先用于实时推理；必须使用人工确认真值和冻结测试集验收。"
+  },
+  {
+    "id": "yoloe26",
+    "name": "YOLOE-26S + SAHI",
+    "task": "开放词汇预标注/小目标检测",
+    "role": "候选框生成",
+    "model_path": "models/yoloe-26s-seg.pt",
+    "recommended_for": ["PCB元器件", "螺钉", "涂胶/喷涂候选区域"],
+    "note": "只用于提高标注效率，输出必须经过人工逐框确认。"
+  },
+  {
+    "id": "rtdetrv2",
+    "name": "RT-DETRv2",
+    "task": "目标检测",
+    "role": "非YOLO交叉验证",
+    "model_path": "/home/xjai/sop-model-store/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth",
+    "recommended_for": ["汽车零部件", "遮挡场景"],
+    "note": "Spark已登记COCO通用预训练权重；需使用产线真值迁移学习，并在同一冻结测试集和同一硬件上复测。"
+  },
+  {
+    "id": "dfine",
+    "name": "D-FINE",
+    "task": "目标检测",
+    "role": "边界定位候选",
+    "model_path": "/home/xjai/sop-model-store/dfine_n_coco.pth",
+    "recommended_for": ["小零件", "PCB细粒度边界"],
+    "note": "Spark已登记COCO通用预训练权重；现场微调后再验证导出、算子兼容、P95延迟和连续运行稳定性。"
+  },
+  {
+    "id": "anomalib",
+    "name": "Anomalib PatchCore/EfficientAD",
+    "task": "异常检测",
+    "role": "划痕、污迹、涂料不均匀",
+    "model_path": "外部权重/待训练",
+    "recommended_for": ["产品划痕", "污迹", "喷涂均匀性"],
+    "note": "异常检测与目标检测并行，需采集正常样本和缺陷样本进行验证。"
+  }
+]

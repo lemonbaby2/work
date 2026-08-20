@@ -1,0 +1,335 @@
+{
+  "generated_at": "2026-08-20 07:15:47",
+  "device": "/dev/video2",
+  "stable_path": "/dev/v4l/by-id/usb-Insta360_Insta360_Link_2C-video-index0",
+  "identity": "Card type        : Insta360 Link 2C: Insta360 Link",
+  "modes": [
+    {
+      "pixel_format": "MJPG",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1920,
+      "height": 1080,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1920,
+      "height": 1440,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1920,
+      "height": 1440,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1920,
+      "height": 1440,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1280,
+      "height": 720,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1280,
+      "height": 960,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1280,
+      "height": 960,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1280,
+      "height": 960,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 3840,
+      "height": 2160,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 3840,
+      "height": 2160,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 3840,
+      "height": 2160,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 3840,
+      "height": 2160,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 3840,
+      "height": 2160,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 3840,
+      "height": 2160,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1920,
+      "height": 1080,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1920,
+      "height": 1440,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1920,
+      "height": 1440,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1920,
+      "height": 1440,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1280,
+      "height": 720,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1280,
+      "height": 720,
+      "fps": 24.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1280,
+      "height": 960,
+      "fps": 30.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1280,
+      "height": 960,
+      "fps": 25.0
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1280,
+      "height": 960,
+      "fps": 24.0
+    }
+  ],
+  "controls": [
+    {
+      "name": "brightness",
+      "type": "int",
+      "details": "min=0 max=100 step=1 default=50 value=50 flags=0x00001000"
+    },
+    {
+      "name": "contrast",
+      "type": "int",
+      "details": "min=0 max=100 step=1 default=50 value=50 flags=0x00001000"
+    },
+    {
+      "name": "saturation",
+      "type": "int",
+      "details": "min=0 max=100 step=1 default=50 value=50 flags=0x00001000"
+    },
+    {
+      "name": "hue",
+      "type": "int",
+      "details": "min=-15 max=15 step=1 default=0 value=0 flags=0x00001000"
+    },
+    {
+      "name": "white_balance_automatic",
+      "type": "bool",
+      "details": "default=1 value=1"
+    },
+    {
+      "name": "power_line_frequency",
+      "type": "menu",
+      "details": "min=0 max=2 default=3 value=3"
+    },
+    {
+      "name": "white_balance_temperature",
+      "type": "int",
+      "details": "min=2000 max=10000 step=1 default=6400 value=6336 flags=inactive, 0x00001000"
+    },
+    {
+      "name": "sharpness",
+      "type": "int",
+      "details": "min=0 max=100 step=1 default=50 value=50 flags=0x00001000"
+    },
+    {
+      "name": "pan_absolute",
+      "type": "int",
+      "details": "min=-522000 max=522000 step=3600 default=0 value=-1014199712 flags=0x00001000"
+    },
+    {
+      "name": "tilt_absolute",
+      "type": "int",
+      "details": "min=-324000 max=360000 step=3600 default=0 value=0 flags=0x00001000"
+    },
+    {
+      "name": "focus_absolute",
+      "type": "int",
+      "details": "min=0 max=100 step=1 default=50 value=94 flags=inactive, 0x00001000"
+    },
+    {
+      "name": "focus_automatic_continuous",
+      "type": "bool",
+      "details": "default=0 value=1"
+    },
+    {
+      "name": "zoom_absolute",
+      "type": "int",
+      "details": "min=100 max=400 step=1 default=100 value=100 flags=0x00001000"
+    }
+  ],
+  "tested_modes": [
+    {
+      "pixel_format": "MJPG",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "ok": true,
+      "frames": 30,
+      "elapsed_s": 3.611,
+      "effective_fps": 8.31,
+      "error": null
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "ok": true,
+      "frames": 30,
+      "elapsed_s": 2.247,
+      "effective_fps": 13.35,
+      "error": null
+    },
+    {
+      "pixel_format": "MJPG",
+      "width": 3840,
+      "height": 2160,
+      "fps": 30.0,
+      "ok": true,
+      "frames": 30,
+      "elapsed_s": 2.207,
+      "effective_fps": 13.59,
+      "error": null
+    },
+    {
+      "pixel_format": "H264",
+      "width": 3840,
+      "height": 2160,
+      "fps": 30.0,
+      "ok": true,
+      "frames": 30,
+      "elapsed_s": 2.168,
+      "effective_fps": 13.84,
+      "error": null
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "ok": true,
+      "frames": 30,
+      "elapsed_s": 2.279,
+      "effective_fps": 13.16,
+      "error": null
+    },
+    {
+      "pixel_format": "H264",
+      "width": 1280,
+      "height": 720,
+      "fps": 30.0,
+      "ok": true,
+      "frames": 30,
+      "elapsed_s": 2.263,
+      "effective_fps": 13.26,
+      "error": null
+    }
+  ],
+  "recommended_sop_mode": {
+    "pixel_format": "MJPG",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "reason": "低延迟和小目标细节平衡；4K用于离线采集或小目标特写，不建议四路同时解码。"
+  },
+  "notes": [
+    "video-index1是UVC元数据节点，不可作为独立摄像头",
+    "Link 2C为固定镜头机型，驱动暴露的pan/tilt数值不作为工业标定依据",
+    "固定工位建议关闭持续自动对焦并锁定白平衡/曝光，参数需在现场补光确定后保存"
+  ]
+}

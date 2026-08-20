@@ -1,0 +1,22 @@
+{
+  "platform": "NVIDIA DGX Spark",
+  "architecture": "aarch64",
+  "gpu": "NVIDIA GB10",
+  "model_store_env": "SOP_SPARK_MODEL_DIR",
+  "default_model_store": "/home/xjai/sop-model-store",
+  "inference_url_env": "SPARK_INFERENCE_URL",
+  "default_inference_url": "http://127.0.0.1:8001",
+  "deployment_policy": "训练、预标注、模型验证、模型仓库和主要推理优先在Spark运行；IPC保留采集、扫码、串口、PLC、缓存和YOLO11n降级推理。",
+  "models": [
+    {"id": "yolo26n", "file": "yolo26n.pt", "purpose": "三产线闭集实时检测基座", "lines": ["pcb", "automotive", "molding-coating"], "runtime": "PyTorch/Ultralytics", "state": "installed"},
+    {"id": "yolo26n-custom", "file": "yolo26n_两视频小目标蒸馏_待人工验收.pt", "purpose": "汽车细粒度学生模型候选", "lines": ["automotive"], "runtime": "PyTorch/Ultralytics", "state": "candidate"},
+    {"id": "yolo26n-custom-onnx", "file": "yolo26n_两视频小目标蒸馏_待人工验收.onnx", "purpose": "汽车细粒度ONNX部署候选", "lines": ["automotive"], "runtime": "ONNX Runtime/TensorRT", "state": "candidate"},
+    {"id": "yoloe26", "file": "yoloe-26s-seg.pt", "purpose": "开放词汇预标注和实例分割教师", "lines": ["pcb", "automotive", "molding-coating"], "runtime": "PyTorch/Ultralytics", "state": "installed"},
+    {"id": "yolov8-world", "file": "yolov8s-worldv2.pt", "purpose": "开放词汇交叉预标注", "lines": ["pcb", "automotive", "molding-coating"], "runtime": "PyTorch/Ultralytics", "state": "installed"},
+    {"id": "mobileclip2", "file": "mobileclip2_b.ts", "purpose": "跨产线语义特征和零样本检索", "lines": ["pcb", "automotive", "molding-coating"], "runtime": "TorchScript", "state": "installed"},
+    {"id": "yolo11n-edge", "file": "yolo11n.pt", "purpose": "IPC断网降级推理", "lines": ["pcb", "automotive", "molding-coating"], "runtime": "PyTorch/Ultralytics", "state": "edge-fallback"},
+    {"id": "rt-detrv2", "file": "rtdetrv2_r18vd_120e_coco_rerun_48.1.pth", "purpose": "非YOLO检测交叉验证", "lines": ["pcb", "automotive"], "runtime": "PyTorch/TensorRT", "state": "generic-pretrained", "source_url": "https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth"},
+    {"id": "d-fine", "file": "dfine_n_coco.pth", "purpose": "小目标边界定位候选", "lines": ["pcb", "automotive", "molding-coating"], "runtime": "PyTorch/TensorRT", "state": "generic-pretrained", "source_url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth"},
+    {"id": "anomalib", "file": null, "purpose": "划痕、污迹、涂层和焊点异常检测", "lines": ["pcb", "molding-coating"], "runtime": "OpenVINO/PyTorch", "state": "train-required"}
+  ]
+}

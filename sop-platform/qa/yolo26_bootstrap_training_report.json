@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-08-16 22:53:56",
+  "gpu": "NVIDIA GeForce RTX 4060",
+  "model": "E:\\宁波项目\\SOP分析平台_老板汇报版\\models\\yolo26n_两视频小目标蒸馏_待人工验收.pt",
+  "teacher": "YOLOE-26S-seg + 四窗口重叠切片",
+  "student": "YOLO26N",
+  "epochs": 12,
+  "imgsz": 960,
+  "train_run": "E:\\宁波项目\\SOP分析平台_老板汇报版\\runs\\frontier_yolo26\\两视频小目标蒸馏",
+  "metrics_against_teacher_pseudo_labels": {
+    "metrics/precision(B)": 0.7451205537676405,
+    "metrics/recall(B)": 0.1677361251829337,
+    "metrics/mAP50(B)": 0.17130176945241019,
+    "metrics/mAP50-95(B)": 0.11329425607833071,
+    "fitness": 0.11329425607833071
+  },
+  "truth_boundary": "这些指标只衡量学生模型与自动教师预标注的一致性，不是对人工真值的量产精度；正式上线前必须人工复核并在冻结测试集重新验收。",
+  "processing_seconds": 279.7
+}
