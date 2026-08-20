@@ -806,6 +806,18 @@ def pcb_model_registry() -> dict[str, object]:
     return registry
 
 
+def restore_selected_pcb_model() -> None:
+    registry = pcb_model_registry()
+    selected = next((item for item in registry.get("models", []) if item.get("selected") and item.get("selectable")), None)
+    if selected is None:
+        return
+    model_path = ROOT / str(selected["weight"])
+    LINE_MODEL_PATHS["pcb"] = model_path
+    for service in LIVE_CAMERAS.values():
+        service.model_path = model_path
+        service._status.update({"model_path": str(model_path), "model": selected.get("name")})
+
+
 def cvat_config() -> dict[str, object]:
     url = os.getenv("CVAT_URL", "http://127.0.0.1:8081").rstrip("/")
     token = os.getenv("CVAT_TOKEN", "").strip()
@@ -1860,6 +1872,7 @@ class SOPHandler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     mimetypes.add_type("video/mp4", ".mp4")
+    restore_selected_pcb_model()
     host, port = os.getenv("SOP_HOST", "0.0.0.0"), int(os.getenv("SOP_PORT", "8096"))
     print(f"宁波SOP分析平台已启动：http://127.0.0.1:{port}")
     print(f"局域网访问地址：http://{primary_lan_address()}:{port}")

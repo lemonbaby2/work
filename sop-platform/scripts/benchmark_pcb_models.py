@@ -13,6 +13,9 @@ import numpy as np
 import torch
 from ultralytics import YOLO
 
+plt.rcParams["font.family"] = ["Noto Sans CJK SC", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "config/pcb_model_registry.json"
