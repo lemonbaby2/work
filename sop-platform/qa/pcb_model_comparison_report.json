@@ -1,0 +1,138 @@
+{
+  "generated_at": "2026-08-20 18:37:05",
+  "gpu": "NVIDIA GB10",
+  "imgsz": 960,
+  "confidence": 0.25,
+  "test_protocol": "Same held-out complete station4 videos, same image size, confidence and DGX Spark GPU.",
+  "models": [
+    {
+      "id": "pcb-0265-yolo26n",
+      "name": "YOLO26N · 0265单视频",
+      "weight": "models/yolo26n_PCB插装0265_50轮_待人工验收.pt",
+      "epochs": 50,
+      "test_images": 1293,
+      "latency_samples": 120,
+      "metrics": {
+        "precision": 0.035289,
+        "recall": 0.195845,
+        "map50": 0.030392,
+        "map50_95": 0.021978
+      },
+      "latency_mean_ms": 6.725,
+      "latency_p95_ms": 10.654,
+      "fps_from_mean": 148.7,
+      "peak_vram_mb": 77.0,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-yolo26n",
+      "name": "YOLO26N · 0264单视频",
+      "weight": "models/yolo26n_PCB插装0264_50轮_待人工验收.pt",
+      "epochs": 50,
+      "test_images": 1293,
+      "latency_samples": 120,
+      "metrics": {
+        "precision": 0.070242,
+        "recall": 0.04058,
+        "map50": 0.026479,
+        "map50_95": 0.018979
+      },
+      "latency_mean_ms": 6.339,
+      "latency_p95_ms": 10.44,
+      "fps_from_mean": 157.75,
+      "peak_vram_mb": 77.0,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-0265-joint-yolo26n",
+      "name": "YOLO26N · 0264+0265联合",
+      "weight": "models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt",
+      "epochs": 50,
+      "test_images": 1293,
+      "latency_samples": 120,
+      "metrics": {
+        "precision": 0.099516,
+        "recall": 0.124798,
+        "map50": 0.036444,
+        "map50_95": 0.024641
+      },
+      "latency_mean_ms": 6.674,
+      "latency_p95_ms": 10.748,
+      "fps_from_mean": 149.83,
+      "peak_vram_mb": 86.1,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0265-roi-yolo26n",
+      "name": "YOLO26N · 0265 ROI增强",
+      "weight": "models/yolo26n_PCB插装0265_ROI增强5轮_待人工验收.pt",
+      "epochs": 5,
+      "test_images": 1293,
+      "latency_samples": 120,
+      "metrics": {
+        "precision": 0.045948,
+        "recall": 0.183885,
+        "map50": 0.05038,
+        "map50_95": 0.036553
+      },
+      "latency_mean_ms": 6.365,
+      "latency_p95_ms": 10.1,
+      "fps_from_mean": 157.11,
+      "peak_vram_mb": 94.6,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-roi-yolo26n",
+      "name": "YOLO26N · 0264 ROI增强",
+      "weight": "models/yolo26n_PCB插装0264_ROI增强5轮_待人工验收.pt",
+      "epochs": 5,
+      "test_images": 1293,
+      "latency_samples": 120,
+      "metrics": {
+        "precision": 0.064743,
+        "recall": 0.152704,
+        "map50": 0.021416,
+        "map50_95": 0.013617
+      },
+      "latency_mean_ms": 6.365,
+      "latency_p95_ms": 9.966,
+      "fps_from_mean": 157.11,
+      "peak_vram_mb": 103.6,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-0265-joint-roi-yolo26n",
+      "name": "YOLO26N · 0264+0265 ROI增强",
+      "weight": "models/yolo26n_PCB插装0264_0265联合_ROI增强5轮_待人工验收.pt",
+      "epochs": 5,
+      "test_images": 1293,
+      "latency_samples": 120,
+      "metrics": {
+        "precision": 0.065335,
+        "recall": 0.203501,
+        "map50": 0.058479,
+        "map50_95": 0.044248
+      },
+      "latency_mean_ms": 6.693,
+      "latency_p95_ms": 11.004,
+      "fps_from_mean": 149.41,
+      "peak_vram_mb": 113.6,
+      "release": "HOLD"
+    }
+  ],
+  "charts": [
+    {
+      "title": "多模型训练精度曲线",
+      "path": "analysis/pcb_model_comparison/01_多模型训练精度曲线.png"
+    },
+    {
+      "title": "多模型统一测试精度对比",
+      "path": "analysis/pcb_model_comparison/02_多模型统一测试精度对比.png"
+    },
+    {
+      "title": "多模型延迟显存对比",
+      "path": "analysis/pcb_model_comparison/03_多模型延迟显存对比.png"
+    }
+  ],
+  "truth_boundary": "Metrics measure agreement with automatic YOLOE teacher candidates. All models remain HOLD until a locked human-labelled test set and NG recall gate are passed."
+}

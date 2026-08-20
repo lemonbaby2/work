@@ -3,6 +3,7 @@
 **/web/media/local/
 **/web/media/
 **/web/data/*.jsonl
+**/web/analysis/pcb_model_comparison/*/
 **/datasets/*/images/
 **/datasets/*/labels/
 **/datasets/**/manifest.jsonl

@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-08-20 15:08:00",
+  "gpu": "NVIDIA GB10",
+  "model": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt",
+  "teacher": "YOLOE-26S open-vocabulary pseudo labels",
+  "student": "YOLO26N",
+  "epochs": 50,
+  "imgsz": 960,
+  "batch": 32,
+  "train_videos": [
+    "DJI_20260819145537_0264_D.MP4",
+    "DJI_20260819151908_0265_D.MP4"
+  ],
+  "validation_videos": [
+    "station4/1.mp4",
+    "station4/2.mp4"
+  ],
+  "test_videos": [
+    "station4/3.mp4",
+    "station4/6.mp4"
+  ],
+  "validation_teacher_agreement": {
+    "metrics/precision(B)": 0.1379821337251025,
+    "metrics/recall(B)": 0.16465950961009043,
+    "metrics/mAP50(B)": 0.08762079358326624,
+    "metrics/mAP50-95(B)": 0.06760707874124351,
+    "fitness": 0.06760707874124351
+  },
+  "test_teacher_agreement": {
+    "metrics/precision(B)": 0.06945505411219999,
+    "metrics/recall(B)": 0.1138303471014771,
+    "metrics/mAP50(B)": 0.046101196295309024,
+    "metrics/mAP50-95(B)": 0.02926059674102891,
+    "fitness": 0.02926059674102891
+  },
+  "processing_seconds": 3464.5,
+  "truth_boundary": "Metrics measure agreement with automatic teacher candidates, not production accuracy. Human review and a locked human-labelled test set remain mandatory before deployment."
+}

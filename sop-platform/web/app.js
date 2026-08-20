@@ -76,6 +76,7 @@ function switchView(name) {
     fitCanvas();
     loadAnnotations();
     loadAnnotationStats();
+    loadAnnotationHistory();
     loadCvatIntegration();
     state.loaded.annotations = true;
   }
@@ -151,15 +152,61 @@ function selectVideo(videoId) {
   updateVideoStatus(video);
   refreshDecision(0, true);
   loadAnnotations();
+  loadAnnotationHistory();
 }
 
 function renderLiveSteps() {
   const steps = playbackSteps();
-  document.getElementById("liveSteps").innerHTML = steps.map(step => `<li data-step="${step.id}"><b>${step.id}</b> ${step.label}</li>`).join("");
+  const list = document.getElementById("liveSteps");
+  list.innerHTML = steps.map(step => {
+    const start = Number(step.start_s || 0);
+    const end = Number(step.end_s || start);
+    const duration = Number(step.duration_s ?? end - start);
+    return `<li data-step="${escapeHtml(step.id)}" data-start="${start}" data-end="${end}" tabindex="0" role="button" aria-label="跳转到${escapeHtml(step.id)} ${escapeHtml(step.label)}">
+      <span><b>${escapeHtml(step.id)}</b> ${escapeHtml(step.label)}</span>
+      <small>${formatTime(start)} - ${formatTime(end)} · 持续 ${formatTime(duration)}</small>
+    </li>`;
+  }).join("");
+  list.querySelectorAll("li").forEach(item => {
+    const activate = () => jumpToStep(item.dataset.step);
+    item.addEventListener("click", activate);
+    item.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        activate();
+      }
+    });
+  });
 }
 
 function formatTime(value) {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
+}
+
+function renderStepRoi(step) {
+  const overlay = document.getElementById("stepRoiOverlay");
+  const label = document.getElementById("stepRoiLabel");
+  if (!overlay || !label || !step?.roi || step.roi.length !== 4) {
+    if (overlay) overlay.hidden = true;
+    return;
+  }
+  const [x1, y1, x2, y2] = step.roi.map(value => Math.max(0, Math.min(1, Number(value))));
+  overlay.hidden = false;
+  overlay.style.left = `${x1 * 100}%`;
+  overlay.style.top = `${y1 * 100}%`;
+  overlay.style.width = `${Math.max(0, x2 - x1) * 100}%`;
+  overlay.style.height = `${Math.max(0, y2 - y1) * 100}%`;
+  label.textContent = `${step.id} ${step.label}`;
+}
+
+function jumpToStep(stepId) {
+  const step = playbackSteps().find(item => item.id === stepId);
+  const video = document.getElementById("sopVideo");
+  if (!step || !video) return;
+  video.currentTime = Number(step.start_s || 0);
+  renderStepRoi(step);
+  updateVideoStatus(video);
+  video.play().catch(() => {});
 }
 
 function updateVideoStatus(video) {
@@ -169,6 +216,7 @@ function updateVideoStatus(video) {
   document.getElementById("liveStepTitle").textContent = `${step.id} ${step.label}`;
   const total = Number.isFinite(video.duration) ? video.duration : Number(currentVideoInfo()?.duration_s || 77.53);
   document.getElementById("liveStepTime").textContent = `${formatTime(video.currentTime || 0)} / ${formatTime(total)}`;
+  renderStepRoi(step);
   document.getElementById("videoProgress").style.width = `${Math.min(100, (video.currentTime || 0) / total * 100)}%`;
   document.querySelectorAll("#liveSteps li").forEach((li, index) => {
     li.classList.toggle("active", index === currentIndex);
@@ -410,6 +458,26 @@ async function loadAnnotationStats() {
   }
 }
 
+async function loadAnnotationHistory() {
+  const rows = document.getElementById("annotationHistoryRows");
+  if (!rows || !state.currentVideoId) return;
+  try {
+    const history = await request(`/api/annotations/history?video=${encodeURIComponent(state.currentVideoId)}`);
+    document.getElementById("annotationHistoryTitle").textContent = `${state.currentVideoId} · 已保存 ${history.save_rounds} 次`;
+    const checkpoints = history.checkpoints || [];
+    const regions = history.regions || [];
+    if (!checkpoints.length && !regions.length) {
+      rows.innerHTML = "<span>尚未保存。画框后先保存这个框，完成一批后再保存本次进度。</span>";
+      return;
+    }
+    const checkpointHtml = checkpoints.map(item => `<div class="history-row"><b>第 ${item.round} 次保存</b><span>${escapeHtml(item.recorded_at)} · 第 ${item.current_frame} 帧 · ${item.annotation_count} 个框</span><small>${escapeHtml((item.regions || []).join("、") || "尚未分区")}</small></div>`).join("");
+    const regionHtml = regions.map(item => `<div class="history-row region-summary"><b>${escapeHtml(item.region)}</b><span>${item.annotation_count} 个已落库框</span><small>最近 ${escapeHtml(item.last_saved_at || "--")}</small></div>`).join("");
+    rows.innerHTML = checkpointHtml + regionHtml;
+  } catch (error) {
+    rows.innerHTML = `<span>保存记录读取失败：${escapeHtml(error.message)}</span>`;
+  }
+}
+
 canvas.addEventListener("pointerdown", event => {
   state.dragging = true;
   state.start = canvasPoint(event);
@@ -489,7 +557,7 @@ document.getElementById("annotationRows").addEventListener("click", async event 
   } catch (error) { showToast("annotationToast", error.message, true); }
 });
 
-document.getElementById("saveAnnotation").addEventListener("click", async () => {
+async function saveCurrentAnnotation() {
   if (!state.box || state.box.w < 5 || state.box.h < 5) {
     showToast("annotationToast", "请先在视频画面上框选一个零件", true);
     return;
@@ -504,9 +572,12 @@ document.getElementById("saveAnnotation").addEventListener("click", async () => 
     state.loadedAnnotation = null;
     document.getElementById("interpolateAnnotation").disabled = true;
     markAnnotationDirty(false);
-    await Promise.all([loadAnnotations(), loadAnnotationStats()]);
+    await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory()]);
   } catch (error) { showToast("annotationToast", error.message, true); }
-});
+}
+
+document.getElementById("saveAnnotation").addEventListener("click", saveCurrentAnnotation);
+document.getElementById("saveCurrentLabelToolbar").addEventListener("click", saveCurrentAnnotation);
 
 document.getElementById("interpolateAnnotation").addEventListener("click", async () => {
   const start = state.loadedAnnotation;
@@ -526,15 +597,20 @@ document.getElementById("interpolateAnnotation").addEventListener("click", async
   } catch (error) { showToast("annotationToast", error.message, true); }
 });
 
-document.getElementById("saveAnnotationProgress").addEventListener("click", async () => {
+async function saveAnnotationCheckpoint() {
   const fps = Number(currentVideoInfo()?.fps || 30);
   try {
     const result = await request("/api/annotations/checkpoint", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, current_time: Number(annotVideo.currentTime.toFixed(3)), current_frame: Math.round(Number(annotVideo.currentTime) * fps), operator: "本地标注员" }) });
     updateLastSaved(result.checkpoint.recorded_at);
     document.getElementById("annotationDatabaseState").textContent = `SQLite WAL 正常 · 已备份 · ${result.checkpoint.annotation_count} 条`;
     showToast("annotationToast", result.message);
+    await loadAnnotationHistory();
   } catch (error) { showToast("annotationToast", error.message, true); }
-});
+}
+
+document.getElementById("saveAnnotationProgress").addEventListener("click", saveAnnotationCheckpoint);
+document.getElementById("saveProgressToolbar").addEventListener("click", saveAnnotationCheckpoint);
+document.getElementById("refreshAnnotationHistory").addEventListener("click", loadAnnotationHistory);
 
 ["annotRegion", "annotLabel", "annotTrack", "annotColor"].forEach(id => document.getElementById(id)?.addEventListener("change", () => {
   if (state.box) markAnnotationDirty(true);
@@ -704,8 +780,21 @@ async function loadCvatIntegration() {
     document.getElementById("cvatStatus").textContent = cvat.available ? "CVAT 在线" : `CVAT 未连接 · ${cvat.url}`;
     document.getElementById("cvatStatus").classList.toggle("green", cvat.available);
     document.getElementById("labelStudioStatus").textContent = cvat.available ? "CVAT 服务在线，可创建任务" : `未连接：${cvat.url}`;
-    document.getElementById("cvatMessage").textContent = cvat.token_configured ? "已配置 CVAT_TOKEN，可由平台调用 CVAT API 创建任务。" : "当前为链接模式；设置 CVAT_TOKEN 后可由平台自动创建任务。";
+    document.getElementById("cvatMessage").textContent = cvat.token_configured ? "本机官方 CVAT 已接通，可由平台创建任务；任务与保存轮次均在本页留痕。" : "CVAT 已运行但尚未配置接口令牌；可打开 CVAT，配置令牌后由平台自动创建任务。";
+    await loadCvatTasks();
   } catch (error) { document.getElementById("cvatStatus").textContent = error.message; }
+}
+
+async function loadCvatTasks() {
+  const rows = document.getElementById("cvatTaskRows");
+  if (!rows) return;
+  try {
+    const result = await request("/api/cvat/tasks");
+    const tasks = result.items || [];
+    rows.innerHTML = tasks.length ? tasks.map((item, index) => `<div class="history-row"><b>${index + 1}. ${escapeHtml(item.name)}</b><span>${escapeHtml(item.status)} · ${escapeHtml(item.dataset_id || "未指定数据集")} · ${escapeHtml(item.created_at)}</span><small>${item.cvat_task_id == null ? "入口待配置" : `CVAT #${item.cvat_task_id}`} · ${(item.labels || []).length} 个标签</small><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">打开任务</a></div>`).join("") : "<span>尚无 CVAT 任务。填写名称和数据集后点击“创建 CVAT 任务”。</span>";
+  } catch (error) {
+    rows.innerHTML = `<span>CVAT 任务读取失败：${escapeHtml(error.message)}</span>`;
+  }
 }
 
 document.getElementById("createCvatTask").addEventListener("click", async () => {
@@ -714,9 +803,12 @@ document.getElementById("createCvatTask").addEventListener("click", async () => 
   try {
     const result = await request("/api/cvat/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: document.getElementById("cvatTaskName").value, dataset_id: datasetId, line_id: state.activeLineId, labels }) });
     document.getElementById("cvatMessage").textContent = `${result.message}：${result.url}`;
+    await loadCvatTasks();
     window.open(result.url, "_blank", "noopener,noreferrer");
   } catch (error) { document.getElementById("cvatMessage").textContent = error.message; }
 });
+
+document.getElementById("refreshCvatTasks").addEventListener("click", loadCvatTasks);
 
 document.getElementById("deployModel").addEventListener("click", async () => {
   try {
@@ -748,8 +840,10 @@ function renderCameraStatus(status) {
   badge.className = `badge ${hasError ? "camera-error" : (running ? "camera-live" : "")}`;
   document.getElementById("cameraSource").textContent = status.source || "--";
   document.getElementById("cameraResolution").textContent = status.width && status.height ? `${status.width}×${status.height}` : "--";
-  document.getElementById("cameraFps").textContent = status.fps ? `${status.fps} FPS` : "--";
-  document.getElementById("cameraLatency").textContent = status.inference_ms ? `${status.inference_ms} ms` : "--";
+  document.getElementById("cameraFps").textContent = status.capture_fps_actual || status.output_fps ? `${status.capture_fps_actual || 0} / ${status.output_fps || status.fps || 0}` : "--";
+  document.getElementById("cameraLatency").textContent = status.pipeline_ms || status.inference_ms ? `${status.pipeline_ms || 0} / ${status.inference_ms || 0} ms` : "--";
+  document.getElementById("cameraDropped").textContent = Number.isFinite(status.dropped_frames) ? `${status.dropped_frames} 帧` : "--";
+  document.getElementById("cameraBuffer").textContent = status.buffering_strategy === "latest-frame-mailbox" ? `最新帧 · ${status.queue_depth || 0}/${status.queue_capacity || 1}` : "--";
   document.getElementById("cameraDetections").textContent = Number.isFinite(status.detections) ? `${status.detections} 个` : "--";
   document.getElementById("cameraModelName").textContent = status.model || activeProductionLine()?.primary_model || "产线模型";
   const output = document.getElementById("cameraOutput");
@@ -758,7 +852,7 @@ function renderCameraStatus(status) {
   const recordButton = document.getElementById("recordLiveCamera");
   if (recordButton) recordButton.textContent = state.recording ? "停止录制" : "开始录制";
   if (hasError) message.textContent = status.error;
-  else if (running) message.textContent = `模型 ${status.model || "YOLOv11n"} 正在实时检测，结果仅作现场验证留证。`;
+  else if (running) message.textContent = `模型 ${status.model || "YOLOv11n"} 正在实时检测；过期帧直接丢弃，当前端到端 ${status.pipeline_ms || 0} ms。`;
   else message.textContent = "点击“启动实时检测”打开摄像头";
 }
 

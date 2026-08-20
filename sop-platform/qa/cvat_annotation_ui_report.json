@@ -1,0 +1,54 @@
+{
+  "verified_at": "2026-08-20 15:56:00",
+  "overall": "PASS",
+  "cvat": {
+    "implementation": "Official CVAT self-hosted deployment under /home/xjai/tools/cvat",
+    "tasks": [
+      {
+        "task_id": 4,
+        "task_name": "PCB-0264-ROI增强-人工复核-20260820",
+        "uploaded_video": "DJI_20260819145537_0264_D_720p.mp4",
+        "frames": 28367
+      },
+      {
+        "task_id": 5,
+        "task_name": "PCB-0265-ROI增强-人工复核-20260820",
+        "uploaded_video": "DJI_20260819151908_0265_D_720p.mp4",
+        "frames": 19778
+      }
+    ],
+    "jobs_per_task": 1,
+    "mode": "interpolation",
+    "status": "annotation"
+  },
+  "sop_annotation_save": {
+    "backend": "SQLite WAL / synchronous FULL / busy timeout 30000 ms",
+    "current_box_button": "PASS",
+    "checkpoint_button": "PASS",
+    "save_round_history": "PASS",
+    "database_quick_check": "ok",
+    "browser_test_database": "isolated QA database"
+  },
+  "browser": {
+    "desktop": "PASS",
+    "mobile_390x844": "PASS",
+    "page_errors": 0,
+    "layout_overlap": false
+  },
+  "model_selection": {
+    "candidate_rows": 6,
+    "comparison_charts": 3,
+    "browser_render": "PASS",
+    "all_release_states": "HOLD"
+  },
+  "lan": {
+    "host": "192.168.1.129",
+    "sop_port": 8096,
+    "cvat_port": 8081,
+    "sop_http_status": 200,
+    "cvat_http_status": 200,
+    "listen_address": "0.0.0.0",
+    "wifi_note": "2.4 GHz and 5 GHz clients use the same LAN URL when the router keeps them in the same LAN/VLAN and client isolation is disabled."
+  },
+  "truth_boundary": "CVAT task creation and UI persistence are verified. Automatic boxes and action intervals remain candidates pending human review; model release remains HOLD."
+}

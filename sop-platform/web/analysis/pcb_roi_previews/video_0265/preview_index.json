@@ -1,0 +1,170 @@
+[
+  {
+    "frame": 0,
+    "time_s": 0.0,
+    "preview": "video_0265_000000.jpg",
+    "box_count": 116,
+    "class_counts": {
+      "PCB板": 7,
+      "插装/按压动作候选": 2,
+      "操作人员手部": 2,
+      "料盒": 1,
+      "混合物料区": 1,
+      "电子元器件/物料候选": 3,
+      "电容": 55,
+      "电容物料区": 1,
+      "电感": 9,
+      "电感物料区": 1,
+      "电阻": 32,
+      "芯片": 2
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  },
+  {
+    "frame": 3210,
+    "time_s": 107.0,
+    "preview": "video_0265_003210.jpg",
+    "box_count": 67,
+    "class_counts": {
+      "PCB板": 4,
+      "插装/按压动作候选": 1,
+      "操作人员手部": 1,
+      "料盒": 2,
+      "混合物料区": 1,
+      "电容": 23,
+      "电容物料区": 1,
+      "电感": 18,
+      "电感物料区": 1,
+      "电阻": 14,
+      "装配治具": 1
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  },
+  {
+    "frame": 5735,
+    "time_s": 191.167,
+    "preview": "video_0265_005735.jpg",
+    "box_count": 139,
+    "class_counts": {
+      "PCB板": 4,
+      "混合物料区": 1,
+      "电子元器件/物料候选": 3,
+      "电容": 47,
+      "电容物料区": 1,
+      "电感": 25,
+      "电感物料区": 1,
+      "电阻": 52,
+      "芯片": 3,
+      "装配治具": 1,
+      "连接器/插件": 1
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  },
+  {
+    "frame": 8670,
+    "time_s": 289.0,
+    "preview": "video_0265_008670.jpg",
+    "box_count": 116,
+    "class_counts": {
+      "PCB板": 3,
+      "插装/按压动作候选": 2,
+      "操作人员手部": 2,
+      "料盒": 3,
+      "混合物料区": 1,
+      "电子元器件/物料候选": 2,
+      "电容": 40,
+      "电容物料区": 1,
+      "电感": 18,
+      "电感物料区": 1,
+      "电阻": 40,
+      "芯片": 2,
+      "装配治具": 1
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  },
+  {
+    "frame": 11510,
+    "time_s": 383.667,
+    "preview": "video_0265_011510.jpg",
+    "box_count": 116,
+    "class_counts": {
+      "PCB板": 5,
+      "插装/按压动作候选": 1,
+      "操作人员手部": 1,
+      "料盒": 1,
+      "混合物料区": 1,
+      "电子元器件/物料候选": 2,
+      "电容": 46,
+      "电容物料区": 1,
+      "电感": 14,
+      "电感物料区": 1,
+      "电阻": 40,
+      "芯片": 2,
+      "装配治具": 1
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  },
+  {
+    "frame": 13920,
+    "time_s": 464.0,
+    "preview": "video_0265_013920.jpg",
+    "box_count": 133,
+    "class_counts": {
+      "PCB板": 7,
+      "插装/按压动作候选": 1,
+      "操作人员手部": 1,
+      "料盒": 1,
+      "混合物料区": 1,
+      "电子元器件/物料候选": 1,
+      "电容": 44,
+      "电容物料区": 1,
+      "电感": 24,
+      "电感物料区": 1,
+      "电阻": 49,
+      "芯片": 2
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  },
+  {
+    "frame": 17100,
+    "time_s": 570.0,
+    "preview": "video_0265_017100.jpg",
+    "box_count": 138,
+    "class_counts": {
+      "PCB板": 6,
+      "插装/按压动作候选": 3,
+      "操作人员手部": 3,
+      "料盒": 1,
+      "混合物料区": 1,
+      "电子元器件/物料候选": 2,
+      "电容": 46,
+      "电容物料区": 1,
+      "电感": 18,
+      "电感物料区": 1,
+      "电阻": 55,
+      "芯片": 1
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  },
+  {
+    "frame": 19770,
+    "time_s": 659.0,
+    "preview": "video_0265_019770.jpg",
+    "box_count": 116,
+    "class_counts": {
+      "PCB板": 4,
+      "插装/按压动作候选": 1,
+      "操作人员手部": 1,
+      "料盒": 2,
+      "混合物料区": 1,
+      "电子元器件/物料候选": 1,
+      "电容": 49,
+      "电容物料区": 1,
+      "电感": 8,
+      "电感物料区": 1,
+      "电阻": 46,
+      "芯片": 1
+    },
+    "truth_status": "automatic_candidates_pending_human_review"
+  }
+]

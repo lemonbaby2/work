@@ -2,10 +2,10 @@
 
 ## 交付位置
 
-Windows 主机 `192.168.1.128` 的交付目录：
+Windows 主机 `192.168.1.117` 和 `192.168.1.128` 的交付目录：
 
 ```text
-D:\Ningbo_SOP_Delivery_20260820
+D:\soplzp0820_20260820
 ```
 
 ## 直接使用局域网网页
@@ -20,12 +20,13 @@ http://192.168.1.129:8096
 
 ## 摄像头身份
 
-当前已检测两台 USB/UVC 摄像头：
+当前 DGX 已检测三台 USB/UVC 主视频节点：
 
-1. Insta360 Link 2C：`/dev/video2`
-2. USB Composite Device：`/dev/video4`
+1. Insta360 Link 2C：`/dev/video0`
+2. USB Composite Camera：`/dev/video2`
+3. USB Webcam：`/dev/video5`
 
-这两台设备是 USB 摄像头，不是 RTSP/GigE 网络摄像头，所以没有独立 IP。它们的画面由 DGX 主机 `192.168.1.129` 统一通过 SOP 网页推送。
+这些设备是 USB 摄像头，不是 RTSP/GigE 网络摄像头，所以没有独立 IP。它们的画面由 DGX 主机 `192.168.1.129` 统一通过 SOP 网页推送。`/dev/ttyACM0` 仅作为串口控制通道，不承载视频。
 
 ## 标注与数据下载
 
@@ -45,10 +46,12 @@ http://192.168.1.129:8096
 
 ## Windows 本机启动
 
-解压完整运行包后，在 PowerShell 中进入项目目录，执行：
+完整应用已解压到：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\启动SOP平台.ps1
+```text
+D:\soplzp0820_20260820\app
 ```
 
-默认 Windows Python 路径为 `D:\Anaconda\envs\dl\python.exe`。若现场路径不同，修改 `启动SOP平台.ps1` 中的 `$pythonExe`。
+双击 `SOP平台.exe` 会自动启动后端。启动器优先使用应用 `.venv` 或已配置的 Anaconda GPU
+环境，没有时回退到交付包内的 Python 3.12 嵌入式运行时。随包运行时可保证网页、标注、SQLite
+和报告功能；Windows 本机 GPU 推理需另外安装 CUDA、PyTorch、Ultralytics 和 OpenCV。

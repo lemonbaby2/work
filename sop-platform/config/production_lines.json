@@ -8,7 +8,7 @@
     "teacher_model": "YOLOE-26S + SAHI",
     "secondary_models": ["RT-DETRv2", "D-FINE", "Anomalib PatchCore/EfficientAD"],
     "dataset_ids": ["pcb-components", "pcb-normal-assembly", "pcb-ng-poka-yoke", "industrial-anomaly"],
-    "labels": ["PCB板", "电阻", "电容", "电感", "二极管", "芯片", "连接器", "焊点", "缺件", "错件", "手部", "烙铁/焊枪", "LED异常", "MAC不一致"],
+    "labels": ["PCB板", "装配治具", "电阻", "电容", "电感", "二极管", "芯片", "连接器/插件", "焊点", "缺件", "错件", "操作人员手部", "烙铁/焊枪", "电子元器件/物料候选", "取料动作候选", "元器件对位候选", "插装/按压动作候选", "完成复检候选", "LED异常", "MAC不一致"],
     "inputs": ["工业摄像头", "扫码枪", "串口/RS232/RS485", "MES"],
     "checks": ["漏装", "错装", "错序", "LED异常", "MAC不一致", "操作步骤", "工人防错动作"],
     "transfer": "以现有YOLO/视觉编码器为基座，先冻结骨干网络，再用本产线CVAT真值做小学习率微调；按产品族保留冻结测试集。"

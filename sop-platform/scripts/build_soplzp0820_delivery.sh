@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_ROOT="$(cd "$ROOT/../.." && pwd)"
-DESTINATION="${1:-$ROOT/runtime/delivery_soplzp0820_20260820}"
+DESTINATION="$(realpath -m "${1:-$ROOT/runtime/delivery_soplzp0820_20260820}")"
 SOURCE_0264="$PROJECT_ROOT/视频数据/8月19号/DJI_20260819145537_0264_D.MP4"
 SOURCE_0265="$PROJECT_ROOT/视频数据/8月19号/DJI_20260819151908_0265_D.MP4"
 
@@ -15,9 +15,15 @@ required=(
   "$ROOT/models/yolo26n_PCB插装0264_50轮_待人工验收.pt"
   "$ROOT/models/yolo26n_PCB插装0265_50轮_待人工验收.pt"
   "$ROOT/models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt"
+  "$ROOT/models/yolo26n_PCB插装0264_ROI增强5轮_待人工验收.pt"
+  "$ROOT/models/yolo26n_PCB插装0265_ROI增强5轮_待人工验收.pt"
+  "$ROOT/models/yolo26n_PCB插装0264_0265联合_ROI增强5轮_待人工验收.pt"
   "$ROOT/qa/pcb_0264_training_report.json"
   "$ROOT/qa/pcb_0265_training_report.json"
   "$ROOT/qa/pcb_0264_0265_joint_training_report.json"
+  "$ROOT/qa/pcb_0264_roi_training_5epochs_report.json"
+  "$ROOT/qa/pcb_0265_roi_training_5epochs_report.json"
+  "$ROOT/qa/pcb_0264_0265_joint_roi_training_5epochs_report.json"
   "$ROOT/qa/pcb_model_comparison_report.json"
 )
 for path in "${required[@]}"; do
@@ -29,7 +35,7 @@ sqlite3 "$DESTINATION/05_sop_annotations.sqlite3" "PRAGMA quick_check;" > "$DEST
 
 WINDOWS_STAGE="$DESTINATION/.windows_app_stage"
 rm -rf "$WINDOWS_STAGE"
-mkdir -p "$WINDOWS_STAGE/app/models" "$WINDOWS_STAGE/app/runtime" "$WINDOWS_STAGE/app/web/media/local"
+mkdir -p "$WINDOWS_STAGE/app/models" "$WINDOWS_STAGE/app/runtime" "$WINDOWS_STAGE/app/web/media"
 rsync -a "$ROOT/" "$WINDOWS_STAGE/app/" \
   --exclude='/datasets' --exclude='/runs' --exclude='/runtime' --exclude='/web/media' \
   --exclude='/models/*.pt' --exclude='/models/*.pth' --exclude='/models/*.onnx' --exclude='/models/*.ts' \
@@ -37,16 +43,28 @@ rsync -a "$ROOT/" "$WINDOWS_STAGE/app/" \
   --exclude='/weights' --exclude='/__pycache__' --exclude='*.pyc'
 cp "$ROOT/runtime/SOP平台.exe" "$WINDOWS_STAGE/app/SOP平台.exe"
 unzip -q "$ROOT/runtime/windows-python-embed/python-3.12.10-embed-amd64.zip" -d "$WINDOWS_STAGE/app/python-runtime"
-cp "$ROOT/models/yolo26n_PCB插装0264_50轮_待人工验收.pt" "$WINDOWS_STAGE/app/models/"
-cp "$ROOT/models/yolo26n_PCB插装0265_50轮_待人工验收.pt" "$WINDOWS_STAGE/app/models/"
-cp "$ROOT/models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt" "$WINDOWS_STAGE/app/models/"
-cp "$ROOT/web/media/local/DJI_20260819145537_0264_D_720p.mp4" "$WINDOWS_STAGE/app/web/media/local/"
-cp "$ROOT/web/media/local/DJI_20260819151908_0265_D_720p.mp4" "$WINDOWS_STAGE/app/web/media/local/"
+rsync -a "$ROOT/models/" "$WINDOWS_STAGE/app/models/"
+rsync -a "$ROOT/web/media/" "$WINDOWS_STAGE/app/web/media/"
 cp "$DESTINATION/05_sop_annotations.sqlite3" "$WINDOWS_STAGE/app/runtime/sop_annotations.sqlite3"
 (
   cd "$WINDOWS_STAGE"
   zip -q -r "$DESTINATION/00_Windows_SOP平台_可运行应用.zip" app
 )
+unzip -tq "$DESTINATION/00_Windows_SOP平台_可运行应用.zip" >/dev/null
+for member in \
+  "app/SOP平台.exe" "app/server.py" "app/python-runtime/python.exe" \
+  "app/runtime/sop_annotations.sqlite3" "app/config/pcb_model_registry.json" \
+  "app/models/yolo26n_PCB插装0264_50轮_待人工验收.pt" \
+  "app/models/yolo26n_PCB插装0265_50轮_待人工验收.pt" \
+  "app/models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt" \
+  "app/models/yolo26n_PCB插装0264_ROI增强5轮_待人工验收.pt" \
+  "app/models/yolo26n_PCB插装0265_ROI增强5轮_待人工验收.pt" \
+  "app/models/yolo26n_PCB插装0264_0265联合_ROI增强5轮_待人工验收.pt"; do
+  unzip -Z1 "$DESTINATION/00_Windows_SOP平台_可运行应用.zip" | grep -Fx "$member" >/dev/null || {
+    echo "Windows application package is missing: $member" >&2
+    exit 1
+  }
+done
 rm -rf "$WINDOWS_STAGE"
 
 tar -C "$ROOT" -czf "$DESTINATION/01_SOP平台源码_soplzp0820.tar.gz" \
@@ -54,20 +72,25 @@ tar -C "$ROOT" -czf "$DESTINATION/01_SOP平台源码_soplzp0820.tar.gz" \
   --exclude='./runtime' --exclude='./web/media' --exclude='./models/*.pt' \
   --exclude='./models/*.pth' --exclude='./models/*.ts' --exclude='./__pycache__' .
 
-tar -C "$ROOT" -czf "$DESTINATION/02_0264_0265关键帧标注数据.tar.gz" \
+tar -C "$ROOT" -czf "$DESTINATION/02_0264_0265_ROI增强关键帧标注数据.tar.gz" \
   --exclude='*.npy' --exclude='*.cache' \
-  datasets/PCB插装0264_YOLOE关键帧预标注_待人工复核 \
-  datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核 \
-  datasets/PCB插装0264_0265联合_YOLOE关键帧预标注_待人工复核 \
+  datasets/PCB插装0264_YOLOE_ROI增强_待人工复核 \
+  datasets/PCB插装0265_YOLOE_ROI增强_待人工复核 \
+  datasets/PCB插装0264_0265联合_YOLOE_ROI增强_待人工复核 \
   web/data/video_0264_frame_annotations.jsonl web/data/video_0264_fine_object_candidates.jsonl \
   web/data/video_0265_frame_annotations.jsonl web/data/video_0265_fine_object_candidates.jsonl
 
-tar -C "$ROOT" -czf "$DESTINATION/03_三模型权重与统一测试报告.tar.gz" \
+tar -C "$ROOT" -czf "$DESTINATION/03_六模型权重与统一测试报告.tar.gz" \
   models/yolo26n_PCB插装0264_50轮_待人工验收.pt \
   models/yolo26n_PCB插装0265_50轮_待人工验收.pt \
   models/yolo26n_PCB插装0264_0265联合50轮_待人工验收.pt \
+  models/yolo26n_PCB插装0264_ROI增强5轮_待人工验收.pt \
+  models/yolo26n_PCB插装0265_ROI增强5轮_待人工验收.pt \
+  models/yolo26n_PCB插装0264_0265联合_ROI增强5轮_待人工验收.pt \
   qa/pcb_0264_training_report.json qa/pcb_0265_training_report.json \
   qa/pcb_0264_0265_joint_training_report.json qa/pcb_model_comparison_report.json \
+  qa/pcb_0264_roi_training_5epochs_report.json qa/pcb_0265_roi_training_5epochs_report.json \
+  qa/pcb_0264_0265_joint_roi_training_5epochs_report.json \
   web/analysis/pcb_model_comparison config/pcb_model_registry.json
 
 tar -C "$ROOT" -czf "$DESTINATION/04_网页代理视频_0264_0265.tar.gz" \

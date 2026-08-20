@@ -34,6 +34,39 @@
       "dataset": "PCB插装0264_0265联合_YOLOE关键帧预标注_待人工复核",
       "epochs": 50,
       "release": "HOLD"
+    },
+    {
+      "id": "pcb-0265-roi-yolo26n",
+      "name": "YOLO26N · 0265 ROI增强",
+      "weight": "models/yolo26n_PCB插装0265_ROI增强5轮_待人工验收.pt",
+      "report": "qa/pcb_0265_roi_training_5epochs_report.json",
+      "results_csv": "runs/pcb_0265_yolo26/PCB插装0265_ROI增强5轮/results.csv",
+      "chart": "analysis/pcb_model_comparison/0265_roi_5epochs_results.png",
+      "dataset": "PCB插装0265_YOLOE_ROI增强_待人工复核",
+      "epochs": 5,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-roi-yolo26n",
+      "name": "YOLO26N · 0264 ROI增强",
+      "weight": "models/yolo26n_PCB插装0264_ROI增强5轮_待人工验收.pt",
+      "report": "qa/pcb_0264_roi_training_5epochs_report.json",
+      "results_csv": "runs/pcb_0265_yolo26/PCB插装0264_ROI增强5轮/results.csv",
+      "chart": "analysis/pcb_model_comparison/0264_roi_5epochs_results.png",
+      "dataset": "PCB插装0264_YOLOE_ROI增强_待人工复核",
+      "epochs": 5,
+      "release": "HOLD"
+    },
+    {
+      "id": "pcb-0264-0265-joint-roi-yolo26n",
+      "name": "YOLO26N · 0264+0265 ROI增强",
+      "weight": "models/yolo26n_PCB插装0264_0265联合_ROI增强5轮_待人工验收.pt",
+      "report": "qa/pcb_0264_0265_joint_roi_training_5epochs_report.json",
+      "results_csv": "runs/pcb_0265_yolo26/PCB插装0264_0265联合_ROI增强5轮/results.csv",
+      "chart": "analysis/pcb_model_comparison/joint_roi_5epochs_results.png",
+      "dataset": "PCB插装0264_0265联合_YOLOE_ROI增强_待人工复核",
+      "epochs": 5,
+      "release": "HOLD"
     }
   ]
 }

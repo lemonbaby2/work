@@ -689,144 +689,6 @@
       "box_refinement": "大零件类别阈值+肤色排除+形状约束；顶部工作栏移至右侧"
     },
     {
-      "id": "video_0265",
-      "display_name": "视频六｜PCB元器件人工插装作业",
-      "source": "/home/xjai/Desktop/sop xjai/视频数据/8月19号/DJI_20260819151908_0265_D.MP4",
-      "video": "media/local/DJI_20260819151908_0265_D_720p.mp4",
-      "source_video": "media/local/DJI_20260819151908_0265_D_720p.mp4",
-      "frames": 19778,
-      "fps": 30.0,
-      "resolution": "1280×720",
-      "duration_s": 659.267,
-      "algorithm": "YOLOE-26S开放词汇 + 固定工位区域 + 运动关键帧 + 人工复核",
-      "parts": [
-        {
-          "id": "R01",
-          "label": "PCB治具区",
-          "roi": [
-            0.035,
-            0.075,
-            0.915,
-            0.965
-          ]
-        },
-        {
-          "id": "R02",
-          "label": "左侧PCB区",
-          "roi": [
-            0.055,
-            0.105,
-            0.385,
-            0.785
-          ]
-        },
-        {
-          "id": "R03",
-          "label": "中间PCB区",
-          "roi": [
-            0.315,
-            0.105,
-            0.655,
-            0.8
-          ]
-        },
-        {
-          "id": "R04",
-          "label": "右侧PCB区",
-          "roi": [
-            0.575,
-            0.105,
-            0.9,
-            0.8
-          ]
-        },
-        {
-          "id": "R05",
-          "label": "左料盒区",
-          "roi": [
-            0.0,
-            0.65,
-            0.285,
-            1.0
-          ]
-        },
-        {
-          "id": "R06",
-          "label": "中料盒区",
-          "roi": [
-            0.23,
-            0.7,
-            0.59,
-            1.0
-          ]
-        },
-        {
-          "id": "R07",
-          "label": "右料盒区",
-          "roi": [
-            0.825,
-            0.33,
-            1.0,
-            0.95
-          ]
-        }
-      ],
-      "steps": [
-        {
-          "id": "S01",
-          "label": "取料候选",
-          "start_s": 0.0,
-          "end_s": 164.81675,
-          "roi": [
-            0.0,
-            0.3,
-            1.0,
-            1.0
-          ]
-        },
-        {
-          "id": "S02",
-          "label": "元器件对位候选",
-          "start_s": 164.81675,
-          "end_s": 329.6335,
-          "roi": [
-            0.03,
-            0.07,
-            0.92,
-            0.97
-          ]
-        },
-        {
-          "id": "S03",
-          "label": "插装/按压候选",
-          "start_s": 329.6335,
-          "end_s": 494.45025000000004,
-          "roi": [
-            0.03,
-            0.07,
-            0.92,
-            0.97
-          ]
-        },
-        {
-          "id": "S04",
-          "label": "完成复检候选",
-          "start_s": 494.45025000000004,
-          "end_s": 659.267,
-          "roi": [
-            0.03,
-            0.07,
-            0.92,
-            0.97
-          ]
-        }
-      ],
-      "visual_result": "自动预标注待人工复核",
-      "production_release": "HOLD",
-      "release_reason": "开放词汇框、动作区间和NG均未完成人工复核，禁止作为量产放行依据",
-      "evidence_boundary": "固定区域与YOLOE候选仅用于提高标注效率；所有NG、稀有类别、遮挡和工序边界必须人工复核"
-    },
-    {
       "id": "video_0264",
       "display_name": "视频五｜PCB元器件人工插装作业（0264）",
       "source": "/home/xjai/Desktop/sop xjai/视频数据/8月19号/DJI_20260819145537_0264_D.MP4",
@@ -836,74 +698,64 @@
       "fps": 30.0,
       "resolution": "1280×720",
       "duration_s": 945.567,
-      "algorithm": "YOLOE-26S开放词汇 + 固定工位区域 + 运动关键帧 + 人工复核",
+      "algorithm": "YOLOE-26S开放词汇 + PCB/物料ROI切片增强 + 运动关键帧 + 人工复核",
       "parts": [
         {
           "id": "R01",
-          "label": "PCB治具区",
+          "label": "左侧PCB区",
           "roi": [
-            0.035,
-            0.075,
-            0.915,
-            0.965
+            0.0,
+            0.105,
+            0.345,
+            0.735
           ]
         },
         {
           "id": "R02",
-          "label": "左侧PCB区",
+          "label": "中间PCB区",
           "roi": [
-            0.055,
+            0.31,
             0.105,
-            0.385,
-            0.785
+            0.68,
+            0.75
           ]
         },
         {
           "id": "R03",
-          "label": "中间PCB区",
+          "label": "右侧PCB区",
           "roi": [
-            0.315,
+            0.645,
             0.105,
-            0.655,
-            0.8
+            0.985,
+            0.75
           ]
         },
         {
           "id": "R04",
-          "label": "右侧PCB区",
+          "label": "电容物料区",
           "roi": [
-            0.575,
-            0.105,
-            0.9,
-            0.8
+            0.0,
+            0.65,
+            0.505,
+            1.0
           ]
         },
         {
           "id": "R05",
-          "label": "左料盒区",
+          "label": "电感物料区",
           "roi": [
-            0.0,
-            0.65,
-            0.285,
+            0.47,
+            0.645,
+            0.875,
             1.0
           ]
         },
         {
           "id": "R06",
-          "label": "中料盒区",
+          "label": "混合物料区",
           "roi": [
-            0.23,
-            0.7,
-            0.59,
-            1.0
-          ]
-        },
-        {
-          "id": "R07",
-          "label": "右料盒区",
-          "roi": [
-            0.825,
-            0.33,
+            0.84,
+            0.35,
             1.0,
             0.95
           ]
@@ -914,49 +766,193 @@
           "id": "S01",
           "label": "取料候选",
           "start_s": 0.0,
-          "end_s": 236.39175,
+          "end_s": 236.392,
+          "duration_s": 236.392,
           "roi": [
             0.0,
-            0.3,
+            0.64,
             1.0,
             1.0
-          ]
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
         },
         {
           "id": "S02",
           "label": "元器件对位候选",
-          "start_s": 236.39175,
-          "end_s": 472.7835,
+          "start_s": 236.392,
+          "end_s": 472.784,
+          "duration_s": 236.392,
           "roi": [
-            0.03,
-            0.07,
-            0.92,
-            0.97
-          ]
+            0.0,
+            0.1,
+            1.0,
+            1.0
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
         },
         {
           "id": "S03",
           "label": "插装/按压候选",
-          "start_s": 472.7835,
-          "end_s": 709.17525,
+          "start_s": 472.784,
+          "end_s": 709.175,
+          "duration_s": 236.391,
           "roi": [
-            0.03,
-            0.07,
-            0.92,
-            0.97
-          ]
+            0.0,
+            0.1,
+            0.985,
+            0.8
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
         },
         {
           "id": "S04",
           "label": "完成复检候选",
-          "start_s": 709.17525,
+          "start_s": 709.175,
           "end_s": 945.567,
+          "duration_s": 236.392,
           "roi": [
-            0.03,
-            0.07,
-            0.92,
-            0.97
+            0.0,
+            0.1,
+            0.985,
+            0.8
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
+        }
+      ],
+      "visual_result": "自动预标注待人工复核",
+      "production_release": "HOLD",
+      "release_reason": "开放词汇框、动作区间和NG均未完成人工复核，禁止作为量产放行依据",
+      "evidence_boundary": "固定区域与YOLOE候选仅用于提高标注效率；所有NG、稀有类别、遮挡和工序边界必须人工复核"
+    },
+    {
+      "id": "video_0265",
+      "display_name": "视频六｜PCB元器件人工插装作业（0265）",
+      "source": "/home/xjai/Desktop/sop xjai/视频数据/8月19号/DJI_20260819151908_0265_D.MP4",
+      "video": "media/local/DJI_20260819151908_0265_D_720p.mp4",
+      "source_video": "media/local/DJI_20260819151908_0265_D_720p.mp4",
+      "frames": 19778,
+      "fps": 30.0,
+      "resolution": "1280×720",
+      "duration_s": 659.267,
+      "algorithm": "YOLOE-26S开放词汇 + PCB/物料ROI切片增强 + 运动关键帧 + 人工复核",
+      "parts": [
+        {
+          "id": "R01",
+          "label": "左侧PCB区",
+          "roi": [
+            0.0,
+            0.105,
+            0.36,
+            0.77
           ]
+        },
+        {
+          "id": "R02",
+          "label": "中间PCB区",
+          "roi": [
+            0.315,
+            0.105,
+            0.68,
+            0.79
+          ]
+        },
+        {
+          "id": "R03",
+          "label": "右侧PCB区",
+          "roi": [
+            0.635,
+            0.105,
+            0.965,
+            0.79
+          ]
+        },
+        {
+          "id": "R04",
+          "label": "电容物料区",
+          "roi": [
+            0.0,
+            0.69,
+            0.365,
+            1.0
+          ]
+        },
+        {
+          "id": "R05",
+          "label": "电感物料区",
+          "roi": [
+            0.285,
+            0.69,
+            0.735,
+            1.0
+          ]
+        },
+        {
+          "id": "R06",
+          "label": "混合物料区",
+          "roi": [
+            0.85,
+            0.35,
+            1.0,
+            0.95
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "S01",
+          "label": "取料候选",
+          "start_s": 0.0,
+          "end_s": 164.817,
+          "duration_s": 164.817,
+          "roi": [
+            0.0,
+            0.64,
+            1.0,
+            1.0
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
+        },
+        {
+          "id": "S02",
+          "label": "元器件对位候选",
+          "start_s": 164.817,
+          "end_s": 329.634,
+          "duration_s": 164.817,
+          "roi": [
+            0.0,
+            0.1,
+            1.0,
+            1.0
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
+        },
+        {
+          "id": "S03",
+          "label": "插装/按压候选",
+          "start_s": 329.634,
+          "end_s": 494.45,
+          "duration_s": 164.816,
+          "roi": [
+            0.0,
+            0.1,
+            0.985,
+            0.8
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
+        },
+        {
+          "id": "S04",
+          "label": "完成复检候选",
+          "start_s": 494.45,
+          "end_s": 659.267,
+          "duration_s": 164.817,
+          "roi": [
+            0.0,
+            0.1,
+            0.985,
+            0.8
+          ],
+          "boundary_status": "automatic_candidate_pending_human_review"
         }
       ],
       "visual_result": "自动预标注待人工复核",
@@ -1070,12 +1066,12 @@
     "processing_seconds": 508.7
   },
   "pcb_0265_extension": {
-    "dataset": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核",
+    "dataset": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE_ROI增强_待人工复核",
     "split_policy": "0265完整视频仅训练；工位4的1/2完整视频验证；3/6完整视频测试",
     "truth_status": "全部自动预标注待人工复核"
   },
   "pcb_0264_extension": {
-    "dataset": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0264_YOLOE关键帧预标注_待人工复核",
+    "dataset": "/home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0264_YOLOE_ROI增强_待人工复核",
     "split_policy": "0264完整视频仅训练；工位4的1/2完整视频验证；3/6完整视频测试",
     "truth_status": "全部自动预标注待人工复核"
   }

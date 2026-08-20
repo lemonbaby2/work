@@ -19,7 +19,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "config/pcb_model_registry.json"
-DATA_YAML = ROOT / "datasets/PCB插装0264_0265联合_YOLOE关键帧预标注_待人工复核/data.yaml"
+DATA_YAML = ROOT / "datasets/PCB插装0264_0265联合_YOLOE_ROI增强_待人工复核/data.yaml"
 OUTPUT = ROOT / "web/analysis/pcb_model_comparison"
 REPORT = ROOT / "qa/pcb_model_comparison_report.json"
 
@@ -31,18 +31,20 @@ def metric(metrics: dict, name: str) -> float:
 
 def training_curves(models: list[dict]) -> str:
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8))
+    max_epoch = 1
     for item in models:
         with (ROOT / item["results_csv"]).open(encoding="utf-8") as handle:
             rows = list(csv.DictReader(handle))
         epochs = [int(float(row["epoch"])) + 1 for row in rows]
+        max_epoch = max(max_epoch, max(epochs, default=1))
         axes[0].plot(epochs, [float(row["metrics/mAP50(B)"]) for row in rows], label=item["name"])
         axes[1].plot(epochs, [float(row["metrics/mAP50-95(B)"]) for row in rows], label=item["name"])
     for axis, title in zip(axes, ("mAP50 by epoch", "mAP50-95 by epoch")):
-        axis.set(title=title, xlabel="Epoch", ylabel="Score", xlim=(1, 50), ylim=(0, 1))
+        axis.set(title=title, xlabel="Epoch", ylabel="Score", xlim=(1, max_epoch), ylim=(0, 1))
         axis.grid(alpha=.25)
         axis.legend(fontsize=8)
     fig.tight_layout()
-    path = OUTPUT / "01_三模型50轮精度曲线.png"
+    path = OUTPUT / "01_多模型训练精度曲线.png"
     fig.savefig(path, dpi=160)
     plt.close(fig)
     return path.name
@@ -52,11 +54,12 @@ def metric_chart(results: list[dict]) -> str:
     keys = ["precision", "recall", "map50", "map50_95"]
     labels = ["Precision", "Recall", "mAP50", "mAP50-95"]
     positions = np.arange(len(keys))
-    width = .24
+    width = .8 / max(1, len(results))
     fig, axis = plt.subplots(figsize=(11, 5.2))
     for index, result in enumerate(results):
         values = [result["metrics"][key] for key in keys]
-        axis.bar(positions + (index - 1) * width, values, width, label=result["name"])
+        offset = (index - (len(results) - 1) / 2) * width
+        axis.bar(positions + offset, values, width, label=result["name"])
     axis.set_xticks(positions, labels)
     axis.set_ylim(0, 1)
     axis.set_ylabel("Score")
@@ -64,7 +67,7 @@ def metric_chart(results: list[dict]) -> str:
     axis.grid(axis="y", alpha=.25)
     axis.legend(fontsize=8)
     fig.tight_layout()
-    path = OUTPUT / "02_三模型统一测试精度对比.png"
+    path = OUTPUT / "02_多模型统一测试精度对比.png"
     fig.savefig(path, dpi=160)
     plt.close(fig)
     return path.name
@@ -81,7 +84,7 @@ def deployment_chart(results: list[dict]) -> str:
         axis.tick_params(axis="x", rotation=12)
         axis.grid(axis="y", alpha=.25)
     fig.tight_layout()
-    path = OUTPUT / "03_三模型延迟显存对比.png"
+    path = OUTPUT / "03_多模型延迟显存对比.png"
     fig.savefig(path, dpi=160)
     plt.close(fig)
     return path.name
@@ -94,7 +97,7 @@ def main() -> None:
     missing = [str(ROOT / item["weight"]) for item in configured if not (ROOT / item["weight"]).is_file()]
     if missing:
         raise RuntimeError(f"Models are not complete: {missing}")
-    test_images = sorted((ROOT / "datasets/PCB插装0265_YOLOE关键帧预标注_待人工复核/images/test").glob("*.jpg"))
+    test_images = sorted((ROOT / "datasets/PCB插装0265_YOLOE_ROI增强_待人工复核/images/test").glob("*.jpg"))
     if not test_images:
         raise RuntimeError("Held-out test images are missing")
     samples = test_images[::max(1, len(test_images) // 120)][:120]
@@ -102,7 +105,7 @@ def main() -> None:
     results = []
     for item in configured:
         model = YOLO(str(ROOT / item["weight"]))
-        validation = model.val(data=str(DATA_YAML), split="test", imgsz=960, batch=16, device=0, workers=6, plots=True, verbose=False, project=str(OUTPUT), name=item["id"], exist_ok=True)
+        validation = model.val(data=str(DATA_YAML), split="test", imgsz=960, batch=16, device=0, workers=6, plots=False, verbose=False, project=str(OUTPUT), name=item["id"], exist_ok=True)
         for image in samples[:8]:
             model.predict(str(image), imgsz=960, conf=.25, device=0, verbose=False)
         torch.cuda.synchronize()

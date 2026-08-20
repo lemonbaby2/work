@@ -6,16 +6,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASETS = ROOT / "datasets"
-SOURCE_0264 = DATASETS / "PCB插装0264_YOLOE关键帧预标注_待人工复核"
-SOURCE_0265 = DATASETS / "PCB插装0265_YOLOE关键帧预标注_待人工复核"
-OUTPUT = DATASETS / "PCB插装0264_0265联合_YOLOE关键帧预标注_待人工复核"
+SOURCE_0264 = DATASETS / "PCB插装0264_YOLOE_ROI增强_待人工复核"
+SOURCE_0265 = DATASETS / "PCB插装0265_YOLOE_ROI增强_待人工复核"
+OUTPUT = DATASETS / "PCB插装0264_0265联合_YOLOE_ROI增强_待人工复核"
 
 
 def main() -> None:
     for source in (SOURCE_0264, SOURCE_0265):
         if not (source / "data.yaml").exists():
             raise RuntimeError(f"Missing prepared dataset: {source}")
+    classes_0264 = json.loads((SOURCE_0264 / "classes.json").read_text(encoding="utf-8"))
     classes = json.loads((SOURCE_0265 / "classes.json").read_text(encoding="utf-8"))
+    if classes_0264 != classes:
+        raise RuntimeError("0264 and 0265 class mappings differ; refusing to mix label IDs")
     names = classes["names"]
     OUTPUT.mkdir(parents=True, exist_ok=True)
     yaml = [

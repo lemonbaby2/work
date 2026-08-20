@@ -1,0 +1,21 @@
+path: /home/xjai/Desktop/sop xjai/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/datasets/PCB插装0265_YOLOE_ROI增强_待人工复核
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: PCB板
+  1: 操作人员手部
+  2: 连接器/插件
+  3: 芯片
+  4: 电容
+  5: 电感
+  6: 电阻
+  7: 电子元器件/物料候选
+  8: 料盒
+  9: 装配治具
+  10: 烙铁/焊枪
+  11: 电容物料区
+  12: 电感物料区
+  13: 混合物料区
+  14: 取料动作候选
+  15: 插装/按压动作候选

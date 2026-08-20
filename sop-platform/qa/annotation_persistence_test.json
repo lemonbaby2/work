@@ -1,0 +1,31 @@
+{
+  "verified_at_utc": "2026-08-20 14:22:35",
+  "overall": "PASS",
+  "tests": [
+    {
+      "name": "region-separated annotation save",
+      "status": "PASS",
+      "detail": "API preserved region and track_id and committed the annotation to SQLite"
+    },
+    {
+      "name": "save-all checkpoint and backup",
+      "status": "PASS",
+      "detail": "checkpoint reported one annotation in one distinct region and created a consistent backup"
+    },
+    {
+      "name": "keyframe interpolation",
+      "status": "PASS",
+      "detail": "three intermediate candidates were generated at the configured frame interval"
+    },
+    {
+      "name": "database integrity",
+      "status": "PASS",
+      "detail": "PRAGMA quick_check returned ok with WAL and synchronous FULL"
+    },
+    {
+      "name": "test-data cleanup",
+      "status": "PASS",
+      "detail": "all uniquely identified QA rows and JSONL events were removed and the clean backup was rebuilt"
+    }
+  ]
+}

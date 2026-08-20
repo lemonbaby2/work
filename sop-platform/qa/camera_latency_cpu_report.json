@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-08-20 15:11:10",
+  "endpoint": "http://127.0.0.1:8098",
+  "camera": 0,
+  "samples": 9,
+  "buffering_strategy": "latest-frame-mailbox",
+  "queue_capacity": 1,
+  "queue_depth_max": 1,
+  "pipeline_ms_mean": 87.61,
+  "pipeline_ms_p95": 126.2,
+  "inference_ms_mean": 67.6,
+  "output_fps_mean": 8.73,
+  "dropped_frames": 74,
+  "pass": true,
+  "note": "Dropped stale frames are intentional. The pass gate verifies bounded latency structure, not model accuracy."
+}

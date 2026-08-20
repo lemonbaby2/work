@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -102,11 +103,11 @@ namespace SopPlatformLauncher
         private string FindPython()
         {
             string[] candidates = {
-                Path.Combine(appRoot, "python-runtime", "python.exe"),
                 Path.Combine(appRoot, ".venv", "Scripts", "python.exe"),
                 @"D:\Anaconda\envs\dl\python.exe",
                 @"D:\Anaconda\python.exe",
                 @"C:\ProgramData\miniconda3\envs\sop\python.exe",
+                Path.Combine(appRoot, "python-runtime", "python.exe"),
                 @"C:\Python312\python.exe",
                 @"C:\Python311\python.exe"
             };
@@ -180,8 +181,20 @@ namespace SopPlatformLauncher
         private async Task RefreshHealth()
         {
             bool online = await Task.Run(() => IsHealthy());
-            string detail = online ? "本机：http://127.0.0.1:" + Port + "  ·  局域网：本机IP:" + Port : (pythonPath == null ? "服务未启动" : "等待后端健康检查 · " + pythonPath);
+            string detail = online ? "本机：http://127.0.0.1:" + Port + "  ·  局域网：http://" + FindLanAddress() + ":" + Port : (pythonPath == null ? "服务未启动" : "等待后端健康检查 · " + pythonPath);
             SetState(online, detail);
+        }
+
+        private string FindLanAddress()
+        {
+            try
+            {
+                foreach (IPAddress address in Dns.GetHostAddresses(Dns.GetHostName()))
+                    if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                        return address.ToString();
+            }
+            catch { }
+            return "本机IP";
         }
 
         private bool IsHealthy()

@@ -1,5 +1,5 @@
 {
-  "verified_at_utc": "2026-08-20 14:17:08",
+  "verified_at_utc": "2026-08-20 14:28:45",
   "application": {
     "name": "SOP平台.exe",
     "type": "native Windows WinForms launcher",
@@ -13,7 +13,7 @@
       "user": "DELL",
       "path": "D:\\soplzp0820_20260820\\app\\SOP平台.exe",
       "exe_size": 14848,
-      "exe_sha256": "ED2CA4EF53986FE000B12F01ADF6C5EE8BB14BCD86910E399E8CDF41F7A7033C",
+      "exe_sha256": "D3592B9441F018F5A56BC09222B0C3AFA0FB990319034E0B566EC242E87992BB",
       "exe_started_backend": true,
       "health_http_status": 200
     },
@@ -22,7 +22,7 @@
       "user": "lzp",
       "path": "D:\\soplzp0820_20260820\\app\\SOP平台.exe",
       "exe_size": 14848,
-      "exe_sha256": "57A1896C61AE0C6FE9B381516C0004447961AAD31F91D2EDB41D5F611E08A4E7",
+      "exe_sha256": "E95DD55BF6EED59F3DAB5F606FB77A05958767200B32933268D637E7DC1705E2",
       "exe_started_backend": true,
       "health_http_status": 200
     }
