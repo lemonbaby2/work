@@ -40,6 +40,7 @@ PRODUCTION_LINES_PATH = ROOT / "config" / "production_lines.json"
 SPARK_DEPLOYMENT_PATH = ROOT / "config" / "spark_deployment.json"
 PCB_MODEL_REGISTRY_PATH = ROOT / "config" / "pcb_model_registry.json"
 ACTIVE_MODEL_SELECTION_PATH = RUNTIME_ROOT / "active_pcb_model.json"
+ANNOTATION_SCOPE_PATH = RUNTIME_ROOT / "station_annotation_scope.json"
 ACTIVE_LINE_ID = os.getenv("SOP_PRODUCTION_LINE", "pcb")
 SPARK_MODEL_ROOT = Path(os.getenv("SOP_SPARK_MODEL_DIR", "/home/xjai/sop-model-store"))
 
@@ -64,6 +65,7 @@ ANNOTATION_DB_PATH = Path(os.getenv("SOP_ANNOTATION_DB", str(RUNTIME_ROOT / "sop
 ANNOTATION_DB_LOCK = threading.RLock()
 CAMERA_INFERENCE_GATE = threading.BoundedSemaphore(max(1, int(os.getenv("SOP_CAMERA_GPU_CONCURRENCY", "1"))))
 AUTH_SESSION_SECONDS = max(900, int(os.getenv("SOP_AUTH_SESSION_SECONDS", "28800")))
+AUTH_SECURE_COOKIE = os.getenv("SOP_SECURE_COOKIE", "0").strip().lower() in {"1", "true", "yes", "on"}
 ROLE_LABELS = {"admin": "开发者", "manager": "管理者", "worker": "普通员工"}
 ROLE_VIEWS = {
     "admin": ["overview", "monitor", "decision", "studio", "annotation", "training", "mes", "quality"],
@@ -130,6 +132,16 @@ def initialize_annotation_db() -> None:
                 recorded_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_reviews_annotation ON annotation_reviews(annotation_id, id);
+            CREATE TABLE IF NOT EXISTS annotation_deletions (
+                annotation_id TEXT PRIMARY KEY,
+                video_id TEXT NOT NULL,
+                track_id TEXT,
+                deleted_by TEXT,
+                reason TEXT,
+                payload_json TEXT NOT NULL,
+                deleted_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_annotation_deletions_video ON annotation_deletions(video_id, deleted_at);
             CREATE TABLE IF NOT EXISTS annotation_checkpoints (
                 checkpoint_id TEXT PRIMARY KEY,
                 video_id TEXT NOT NULL,
@@ -252,6 +264,7 @@ def db_upsert_annotation(annotation: dict) -> None:
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     annotation = {**annotation, "recorded_at": annotation.get("recorded_at", now)}
     with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        connection.execute("DELETE FROM annotation_deletions WHERE annotation_id = ?", (annotation["annotation_id"],))
         connection.execute(
             """
             INSERT INTO annotations (
@@ -282,7 +295,107 @@ def db_manual_annotations(video_id: str | None = None) -> list[dict]:
         params = (video_id,)
     query += " ORDER BY video_id, frame, annotation_id"
     with ANNOTATION_DB_LOCK, annotation_db() as connection:
-        return [json.loads(row["payload_json"]) for row in connection.execute(query, params)]
+        deleted = {str(row[0]) for row in connection.execute("SELECT annotation_id FROM annotation_deletions")}
+        return [item for item in (json.loads(row["payload_json"]) for row in connection.execute(query, params)) if str(item.get("annotation_id")) not in deleted]
+
+
+def db_deleted_annotation_ids() -> set[str]:
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        return {str(row[0]) for row in connection.execute("SELECT annotation_id FROM annotation_deletions")}
+
+
+def db_delete_annotations(annotation_ids: list[str], deleted_by: str, reason: str = "人工删除") -> dict[str, object]:
+    cleaned_ids = list(dict.fromkeys(item.strip() for item in annotation_ids if item.strip()))
+    if not cleaned_ids:
+        raise ValueError("未指定要删除的标注")
+    deleted: list[dict] = []
+    skipped: list[str] = []
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        for annotation_id in cleaned_ids:
+            row = connection.execute(
+                "SELECT video_id, track_id, source_kind, payload_json FROM annotations WHERE annotation_id = ?",
+                (annotation_id,),
+            ).fetchone()
+            if row is None or row["source_kind"] != "manual":
+                skipped.append(annotation_id)
+                continue
+            payload = json.loads(row["payload_json"])
+            tombstone = {
+                "annotation_id": annotation_id,
+                "video_id": row["video_id"],
+                "track_id": row["track_id"],
+                "deleted_by": deleted_by,
+                "reason": reason,
+                "deleted_at": now,
+            }
+            connection.execute(
+                "INSERT OR REPLACE INTO annotation_deletions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (annotation_id, row["video_id"], row["track_id"], deleted_by, reason, json.dumps({**payload, **tombstone}, ensure_ascii=False), now),
+            )
+            connection.execute("DELETE FROM annotation_reviews WHERE annotation_id = ?", (annotation_id,))
+            connection.execute("DELETE FROM annotations WHERE annotation_id = ?", (annotation_id,))
+            deleted.append(tombstone)
+    return {"deleted": deleted, "deleted_count": len(deleted), "skipped": skipped}
+
+
+def db_delete_track(video_id: str, track_id: str, deleted_by: str) -> dict[str, object]:
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        ids = [str(row[0]) for row in connection.execute(
+            "SELECT annotation_id FROM annotations WHERE video_id = ? AND track_id = ? AND source_kind = 'manual'",
+            (video_id, track_id),
+        )]
+    if not ids:
+        raise ValueError("该轨迹没有可删除的人工标注")
+    return db_delete_annotations(ids, deleted_by, "删除整条轨迹")
+
+
+def db_annotation_tracks(video_id: str) -> list[dict[str, object]]:
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        rows = list(connection.execute(
+            """SELECT track_id, label, region, MIN(frame) AS start_frame, MAX(frame) AS end_frame,
+                      COUNT(*) AS frame_count, MAX(updated_at) AS updated_at
+               FROM annotations
+               WHERE video_id = ? AND track_id IS NOT NULL AND track_id != '' AND source_kind = 'manual'
+               GROUP BY track_id, label, region ORDER BY updated_at DESC""",
+            (video_id,),
+        ))
+        results = []
+        for row in rows:
+            frames = [int(item[0]) for item in connection.execute(
+                "SELECT frame FROM annotations WHERE video_id = ? AND track_id = ? ORDER BY frame LIMIT 240",
+                (video_id, row["track_id"]),
+            )]
+            results.append({**dict(row), "frames": frames})
+    return results
+
+
+def annotation_scope() -> dict[str, object]:
+    default = {
+        "station_name": "PCB固定工位",
+        "quality_goal": "确认取料、插装位置和工序是否正确",
+        "material_a": "二极管插件",
+        "material_b": "其他插件",
+        "distinguish_materials": True,
+        "required_labels": ["PCB板", "操作人员手部", "物料框", "手持插件", "插件位置"],
+        "excluded_labels": ["逐个电容", "逐个电阻", "与本工位质量目标无关的元件"],
+        "policy": "只标注能判断本工位取料、插装位置和工序正确性的目标。只有当不同插件会影响工艺判定时才分类。",
+    }
+    saved = read_config(ANNOTATION_SCOPE_PATH, {})
+    return {**default, **saved} if isinstance(saved, dict) else default
+
+
+def save_annotation_scope(payload: dict[str, object]) -> dict[str, object]:
+    current = annotation_scope()
+    allowed = {"station_name", "quality_goal", "material_a", "material_b", "distinguish_materials", "required_labels", "excluded_labels", "policy"}
+    scope = {**current, **{key: payload[key] for key in allowed if key in payload}}
+    if not str(scope.get("station_name") or "").strip() or not str(scope.get("quality_goal") or "").strip():
+        raise ValueError("工位名称和质量判定目标不能为空")
+    ANNOTATION_SCOPE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary = ANNOTATION_SCOPE_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(scope, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, ANNOTATION_SCOPE_PATH)
+    return scope
 
 
 def db_annotation_reviews() -> dict[str, dict]:
@@ -1789,12 +1902,15 @@ def frame_annotation_items(video_id: str, requested_time: float) -> list[dict]:
 
 def manual_annotation_items(video_id: str | None = None) -> list[dict]:
     reviews = annotation_reviews()
+    deleted_ids = db_deleted_annotation_ids()
     records: dict[str, dict] = {}
     for record in read_jsonl(RUNTIME_ROOT / "annotations.jsonl") + db_manual_annotations(video_id):
         record_video_id = str(record.get("video_id") or video_id_for_source(record.get("video")))
         if video_id and record_video_id != video_id:
             continue
         annotation_id = str(record.get("annotation_id") or f"manual:{record_video_id}:{record.get('_line')}")
+        if annotation_id in deleted_ids:
+            continue
         records[annotation_id] = record
     items = []
     for annotation_id, record in records.items():
@@ -2125,6 +2241,8 @@ class SOPHandler(SimpleHTTPRequestHandler):
         )
         if method == "POST" and path == "/api/annotations/review":
             manager_prefixes = (*manager_prefixes, "/api/annotations/review")
+        if method == "POST" and path == "/api/annotations/scope":
+            manager_prefixes = (*manager_prefixes, "/api/annotations/scope")
         if path.startswith(admin_only) and role != "admin":
             self.send_json({"ok": False, "message": "该操作仅开发者可执行"}, HTTPStatus.FORBIDDEN)
             return None
@@ -2188,6 +2306,18 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "message": "视频不存在"}, HTTPStatus.NOT_FOUND)
                 return
             self.send_json({"ok": True, **db_annotation_history(video_id)})
+            return
+        if path == "/api/annotations/tracks":
+            query = parse_qs(parsed.query)
+            video_id = str(query.get("video", ["video_0265"])[0])
+            if video_info(video_id) is None:
+                self.send_json({"ok": False, "message": "视频不存在"}, HTTPStatus.NOT_FOUND)
+                return
+            tracks = db_annotation_tracks(video_id)
+            self.send_json({"ok": True, "video_id": video_id, "items": tracks, "total": len(tracks)})
+            return
+        if path == "/api/annotations/scope":
+            self.send_json({"ok": True, "scope": annotation_scope()})
             return
         if path == "/api/annotations/stats":
             self.send_json(annotation_stats())
@@ -2435,7 +2565,7 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 full_user = auth_user_for_session(session_id)
                 self.send_json(
                     {"ok": True, "message": "登录成功", "user": full_user},
-                    headers={"Set-Cookie": f"sop_session={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={AUTH_SESSION_SECONDS}"},
+                    headers={"Set-Cookie": f"sop_session={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={AUTH_SESSION_SECONDS}{'; Secure' if AUTH_SECURE_COOKIE else ''}"},
                 )
                 return
             if path == "/api/auth/logout":
@@ -2445,7 +2575,7 @@ class SOPHandler(SimpleHTTPRequestHandler):
                         connection.execute("DELETE FROM auth_sessions WHERE session_id = ?", (session_id,))
                 self.send_json(
                     {"ok": True, "message": "已安全退出"},
-                    headers={"Set-Cookie": "sop_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"},
+                    headers={"Set-Cookie": f"sop_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{'; Secure' if AUTH_SECURE_COOKIE else ''}"},
                 )
                 return
             if path.startswith("/api/") and self.require_api_access(path, "POST") is None:
@@ -2507,6 +2637,31 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 self.append_event("annotation_reviews.jsonl", review)
                 self.send_json({"ok": True, "review": review, "message": "审核结果已留痕"})
                 return
+            if path == "/api/annotations/delete":
+                annotation_id = str(payload.get("annotation_id") or "").strip()
+                user = self.current_user() or {}
+                result = db_delete_annotations([annotation_id], str(user.get("username") or "unknown"), str(payload.get("reason") or "人工删除"))
+                if not result["deleted_count"]:
+                    self.send_json({"ok": False, "message": "只能删除已保存的人工标注；检测候选请使用驳回"}, 409)
+                    return
+                self.append_event("annotation_deletions.jsonl", result)
+                self.send_json({"ok": True, **result, "message": "已删除该人工标注，删除记录已留存"})
+                return
+            if path == "/api/annotations/tracks/delete":
+                video_id = str(payload.get("video_id") or "").strip()
+                track_id = str(payload.get("track_id") or "").strip()
+                if not video_id or not track_id:
+                    raise ValueError("请指定要删除的视频和轨迹")
+                user = self.current_user() or {}
+                result = db_delete_track(video_id, track_id, str(user.get("username") or "unknown"))
+                self.append_event("annotation_deletions.jsonl", {**result, "track_id": track_id})
+                self.send_json({"ok": True, **result, "track_id": track_id, "message": f"已删除轨迹 {track_id} 及其 {result['deleted_count']} 个标注框"})
+                return
+            if path == "/api/annotations/scope":
+                scope = save_annotation_scope(payload)
+                self.append_event("annotation_scope_changes.jsonl", scope)
+                self.send_json({"ok": True, "scope": scope, "message": "工位标注范围已保存，标注员会看到同一套口径"})
+                return
             if path == "/api/annotations/checkpoint":
                 checkpoint = db_checkpoint(payload)
                 self.append_event("annotation_checkpoints.jsonl", checkpoint)
@@ -2530,13 +2685,17 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 step = max(1, int(payload.get("frame_step", 1)))
                 fps = float(info.get("fps", 30))
                 track_id = str(payload.get("track_id") or f"track:{video_id}:{time.time_ns()}")
+                frames = list(range(start_frame, end_frame + 1, step))
+                if frames[-1] != end_frame:
+                    frames.append(end_frame)
                 generated = []
-                for frame in range(start_frame + step, end_frame, step):
+                start_annotation_id = str(payload.get("start_annotation_id") or "").strip()
+                for frame in frames:
                     ratio = (frame - start_frame) / (end_frame - start_frame)
                     box = [round(a + (b - a) * ratio, 6) for a, b in zip(start_box, end_box)]
                     _, pixels = normalize_box(box, video_id)
                     annotation = {
-                        "annotation_id": f"interpolated:{video_id}:{track_id}:{frame}",
+                        "annotation_id": start_annotation_id if frame == start_frame and start_annotation_id else f"interpolated:{video_id}:{track_id}:{frame}",
                         "video_id": video_id, "video_time": round(frame / fps, 3), "frame": frame,
                         "label": str(payload["label"]), "region": str(payload.get("region") or "未分区"),
                         "track_id": track_id, "box": box, "box_pixels": pixels,
@@ -2547,7 +2706,7 @@ class SOPHandler(SimpleHTTPRequestHandler):
                     db_upsert_annotation(annotation)
                     generated.append(annotation)
                 self.append_event("annotation_interpolations.jsonl", {"video_id": video_id, "track_id": track_id, "start_frame": start_frame, "end_frame": end_frame, "generated": len(generated), "region": payload.get("region")})
-                self.send_json({"ok": True, "generated": len(generated), "track_id": track_id, "message": f"已生成 {len(generated)} 个中间帧候选，仍需人工复核"})
+                self.send_json({"ok": True, "generated": len(generated), "generated_frames": frames, "start_frame": start_frame, "end_frame": end_frame, "track_id": track_id, "message": f"轨迹 {track_id} 已生成 {len(generated)} 个框（含起止关键帧），仍需人工复核"})
                 return
             if path == "/api/sop/save":
                 if not isinstance(payload.get("steps"), list) or not payload["steps"]:

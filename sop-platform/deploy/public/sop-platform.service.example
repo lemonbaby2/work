@@ -1,0 +1,26 @@
+[Unit]
+Description=Ningbo SOP annotation platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sop
+Group=sop
+WorkingDirectory=/opt/sop-platform
+Environment=SOP_HOST=127.0.0.1
+Environment=SOP_PORT=8096
+Environment=SOP_SECURE_COOKIE=1
+Environment=SOP_AUTH_SESSION_SECONDS=28800
+Environment=SOP_DESKTOP_DIR=/opt/sop-platform/runtime/storage
+ExecStart=/opt/sop-platform/.venv/bin/python /opt/sop-platform/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sop-platform/runtime
+
+[Install]
+WantedBy=multi-user.target

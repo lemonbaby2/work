@@ -22,6 +22,7 @@ const state = {
   annotationChangedAt: null,
   annotationSavedAt: null,
   loadedAnnotation: null,
+  interpolationStart: null,
   algorithms: [],
   productionLines: [],
   datasets: [],
@@ -134,6 +135,8 @@ function switchView(name) {
     loadAnnotations();
     loadAnnotationStats();
     loadAnnotationHistory();
+    loadAnnotationTracks();
+    loadAnnotationScope();
     loadCvatIntegration();
     state.loaded.annotations = true;
   }
@@ -148,6 +151,11 @@ document.querySelectorAll("[data-jump]").forEach(button => button.addEventListen
 
 function currentVideoInfo() {
   return state.catalog?.videos.find(video => video.id === state.currentVideoId) || null;
+}
+
+function authenticatedMediaUrl(url) {
+  if (!url || !String(url).startsWith("media/")) return url;
+  return `${url}${String(url).includes("?") ? "&" : "?"}release=20260821-annotation-v2`;
 }
 
 function renderCameraOptions(cameras = []) {
@@ -199,12 +207,13 @@ function selectVideo(videoId) {
   if (!info) return;
   const video = document.getElementById("sopVideo");
   video.pause();
-  video.src = info.presentation_video || info.enhanced_video || info.video;
+  video.src = authenticatedMediaUrl(info.presentation_video || info.enhanced_video || info.video);
   video.load();
   const annotVideo = document.getElementById("annotVideo");
-  annotVideo.src = info.source_video;
+  annotVideo.src = authenticatedMediaUrl(info.source_video);
   annotVideo.load();
   state.loadedAnnotation = null;
+  clearInterpolationStart();
   state.box = null;
   markAnnotationDirty(false);
   document.getElementById("annotVideoSelect").value = videoId;
@@ -219,6 +228,7 @@ function selectVideo(videoId) {
   refreshDecision(0, true);
   loadAnnotations();
   loadAnnotationHistory();
+  loadAnnotationTracks();
 }
 
 function renderLiveSteps() {
@@ -525,11 +535,11 @@ function renderAnnotationRows(items) {
   const sourceNames = { prelabel: "检测预标注", candidate: "小目标候选", manual: "人工标注" };
   rows.innerHTML = items.map(item => `<tr>
     <td><b>${Number(item.video_time).toFixed(3)}s</b><small>第 ${item.frame} 帧</small></td>
-    <td><b>${escapeHtml(item.region || "未分区")}</b><small>${escapeHtml(item.label)}</small></td>
+    <td><b>${escapeHtml(item.region || "未分区")}</b><small>${escapeHtml(item.label)}</small>${item.track_id ? `<small class="track-id">轨迹 ${escapeHtml(item.track_id)}</small>` : ""}</td>
     <td><span class="source-tag ${item.source_kind}">${sourceNames[item.source_kind] || escapeHtml(item.source_kind)}</span><small title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</small></td>
     <td>${item.confidence == null ? "--" : `${(Number(item.confidence) * 100).toFixed(1)}%`}</td>
     <td><span class="review-state ${item.review_status}">${statusNames[item.review_status] || escapeHtml(item.review_status)}</span></td>
-    <td><div class="row-actions"><button class="ghost" data-load-annotation="${escapeHtml(item.annotation_id)}">载入框</button><button class="ghost" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="human_confirmed">确认</button><button class="ghost danger-action" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="rejected">驳回</button></div></td>
+    <td><div class="row-actions"><button class="ghost" data-load-annotation="${escapeHtml(item.annotation_id)}">载入框</button><button class="ghost" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="human_confirmed">确认</button><button class="ghost danger-action" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="rejected">驳回</button>${item.source_kind === "manual" ? `<button class="ghost danger-action" data-delete-annotation="${escapeHtml(item.annotation_id)}">删除</button>` : ""}</div></td>
   </tr>`).join("");
 }
 
@@ -587,6 +597,120 @@ async function loadAnnotationHistory() {
   }
 }
 
+async function loadAnnotationScope() {
+  try {
+    const result = await request("/api/annotations/scope");
+    const scope = result.scope || {};
+    document.getElementById("scopeStationName").value = scope.station_name || "";
+    document.getElementById("scopeQualityGoal").value = scope.quality_goal || "";
+    document.getElementById("scopeMaterialA").value = scope.material_a || "";
+    document.getElementById("scopeMaterialB").value = scope.material_b || "";
+    document.getElementById("scopeDistinguish").checked = Boolean(scope.distinguish_materials);
+    document.getElementById("scopeRequiredLabels").textContent = (scope.required_labels || []).join("、");
+    document.getElementById("scopeExcludedLabels").textContent = (scope.excluded_labels || []).join("、");
+    document.getElementById("scopePolicy").textContent = scope.policy || "";
+    document.getElementById("scopeStatus").textContent = scope.distinguish_materials ? "按工艺区分物料" : "插件使用通用类别";
+  } catch (error) {
+    document.getElementById("scopeStatus").textContent = "读取失败";
+  }
+}
+
+async function loadAnnotationTracks() {
+  const rows = document.getElementById("trackRows");
+  if (!rows || !state.currentVideoId) return;
+  try {
+    const result = await request(`/api/annotations/tracks?video=${encodeURIComponent(state.currentVideoId)}`);
+    if (!result.items?.length) {
+      rows.innerHTML = "<span>尚未生成轨迹。设置起始关键帧并到后续帧生成后，这里会显示帧范围。</span>";
+      return;
+    }
+    rows.innerHTML = result.items.map(track => `<div class="track-row"><div><b>${escapeHtml(track.track_id)}</b><span>${escapeHtml(track.label)} · ${escapeHtml(track.region)} · 第 ${track.start_frame}–${track.end_frame} 帧</span><small>已生成 ${track.frame_count} 个框：${escapeHtml((track.frames || []).slice(0, 18).join("、"))}${track.frame_count > 18 ? "…" : ""}</small></div><div><button class="ghost" data-open-track="${escapeHtml(track.track_id)}" data-track-frame="${track.start_frame}">查看起始帧</button><button class="ghost danger-action" data-delete-track="${escapeHtml(track.track_id)}">删除轨迹</button></div></div>`).join("");
+  } catch (error) {
+    rows.innerHTML = `<span>轨迹读取失败：${escapeHtml(error.message)}</span>`;
+  }
+}
+
+function currentAnnotFrame() {
+  return Math.round(Number(annotVideo.currentTime || 0) * Number(currentVideoInfo()?.fps || 30));
+}
+
+function normalizedCurrentBox() {
+  if (!state.box || state.box.w < 5 || state.box.h < 5) return null;
+  return [state.box.x / canvas.width, state.box.y / canvas.height, (state.box.x + state.box.w) / canvas.width, (state.box.y + state.box.h) / canvas.height].map(value => Number(value.toFixed(6)));
+}
+
+function formatAnnotTime(seconds) {
+  const safe = Math.max(0, Number(seconds || 0));
+  const minutes = Math.floor(safe / 60);
+  const remainder = Math.floor(safe % 60);
+  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+}
+
+function updatePlaybackUi() {
+  const frame = currentAnnotFrame();
+  const totalFrames = Math.max(0, Number(currentVideoInfo()?.frames || Math.round(Number(annotVideo.duration || 0) * Number(currentVideoInfo()?.fps || 30))));
+  const timeline = document.getElementById("annotTimeline");
+  timeline.max = String(Math.max(1, totalFrames - 1));
+  timeline.value = String(Math.min(frame, totalFrames - 1));
+  document.getElementById("annotFrameInput").max = String(Math.max(0, totalFrames - 1));
+  document.getElementById("annotFrameInput").value = String(frame);
+  document.getElementById("annotDuration").textContent = `${formatAnnotTime(annotVideo.currentTime)} / ${formatAnnotTime(annotVideo.duration || currentVideoInfo()?.duration_s)}`;
+  const icon = annotVideo.paused ? "▶" : "❚❚";
+  document.getElementById("stagePlayback").textContent = icon;
+  document.getElementById("toggleAnnotPlayback").textContent = icon;
+}
+
+function seekToFrame(frame) {
+  annotVideo.pause();
+  const fps = Number(currentVideoInfo()?.fps || 30);
+  const maxFrame = Math.max(0, Number(currentVideoInfo()?.frames || Math.round(Number(annotVideo.duration || 0) * fps)) - 1);
+  const target = Math.min(maxFrame, Math.max(0, Number(frame || 0)));
+  if (target !== currentAnnotFrame()) {
+    state.box = null;
+    state.loadedAnnotation = null;
+    markAnnotationDirty(false);
+  }
+  annotVideo.currentTime = target / fps;
+}
+
+function toggleAnnotPlayback() {
+  if (annotVideo.paused) annotVideo.play().catch(error => showToast("annotationToast", `无法播放：${error.message}`, true));
+  else annotVideo.pause();
+}
+
+function clearInterpolationStart() {
+  state.interpolationStart = null;
+  const button = document.getElementById("interpolateAnnotation");
+  const cancel = document.getElementById("cancelInterpolation");
+  if (button) button.disabled = true;
+  if (cancel) cancel.disabled = true;
+  const panel = document.getElementById("keyframeState");
+  if (panel) panel.innerHTML = "<b>尚未设置起始关键帧</b><span>在起始帧画框后点“设为起始关键帧”，再到后续帧重画后生成轨迹。</span>";
+}
+
+function setInterpolationStart() {
+  const box = normalizedCurrentBox();
+  if (!box) {
+    showToast("annotationToast", "请先在起始帧画一个有效的框", true);
+    return;
+  }
+  const frame = currentAnnotFrame();
+  const trackInput = document.getElementById("annotTrack");
+  state.interpolationStart = {
+    frame,
+    box,
+    label: document.getElementById("annotLabel").value,
+    region: document.getElementById("annotRegion").value,
+    trackId: trackInput.value.trim(),
+    annotationId: state.loadedAnnotation?.source_kind === "manual" && Number(state.loadedAnnotation.frame) === frame ? state.loadedAnnotation.annotation_id : "",
+  };
+  document.getElementById("interpolateAnnotation").disabled = false;
+  document.getElementById("cancelInterpolation").disabled = false;
+  document.getElementById("keyframeState").innerHTML = `<b>起始关键帧：第 ${frame} 帧 · ${escapeHtml(state.interpolationStart.label)}</b><span>现在跳到后续帧，在目标新位置重画框，然后点“生成轨迹到当前帧”。${state.interpolationStart.trackId ? `轨迹 ID：${escapeHtml(state.interpolationStart.trackId)}` : "轨迹 ID 将由系统生成。"}</span>`;
+  document.getElementById("boxStatus").textContent = `已记住第 ${frame} 帧起始框，请跳到后续帧重画`;
+  markAnnotationDirty(false);
+}
+
 canvas.addEventListener("pointerdown", event => {
   state.dragging = true;
   state.start = canvasPoint(event);
@@ -607,30 +731,38 @@ document.getElementById("clearBox").addEventListener("click", () => {
   drawBox();
   document.getElementById("boxStatus").textContent = "请在视频上拖动鼠标框选";
   state.loadedAnnotation = null;
-  document.getElementById("interpolateAnnotation").disabled = true;
   markAnnotationDirty(false);
 });
 window.addEventListener("resize", fitCanvas);
-annotVideo.addEventListener("loadedmetadata", () => { fitCanvas(); loadAnnotations(); });
+annotVideo.addEventListener("loadedmetadata", () => { fitCanvas(); updatePlaybackUi(); loadAnnotations(); });
 annotVideo.addEventListener("timeupdate", () => {
   document.getElementById("annotFrameTime").textContent = `${Number(annotVideo.currentTime).toFixed(3)} 秒`;
+  updatePlaybackUi();
   drawBox();
 });
 annotVideo.addEventListener("seeked", loadAnnotations);
 annotVideo.addEventListener("pause", loadAnnotations);
+annotVideo.addEventListener("play", updatePlaybackUi);
+annotVideo.addEventListener("ended", updatePlaybackUi);
 
 document.getElementById("annotVideoSelect").addEventListener("change", event => selectVideo(event.target.value));
 document.getElementById("annotSourceFilter").addEventListener("change", loadAnnotations);
 document.getElementById("annotStatusFilter").addEventListener("change", loadAnnotations);
 document.getElementById("refreshAnnotations").addEventListener("click", loadAnnotations);
 document.getElementById("prevFrame").addEventListener("click", () => {
-  annotVideo.pause();
-  annotVideo.currentTime = Math.max(0, annotVideo.currentTime - 1 / Number(currentVideoInfo()?.fps || 30));
+  seekToFrame(currentAnnotFrame() - 1);
 });
 document.getElementById("nextFrame").addEventListener("click", () => {
-  annotVideo.pause();
-  annotVideo.currentTime = Math.min(Number(currentVideoInfo()?.duration_s || annotVideo.duration || 0), annotVideo.currentTime + 1 / Number(currentVideoInfo()?.fps || 30));
+  seekToFrame(currentAnnotFrame() + 1);
 });
+document.getElementById("toggleAnnotPlayback").addEventListener("click", toggleAnnotPlayback);
+document.getElementById("stagePlayback").addEventListener("click", toggleAnnotPlayback);
+document.getElementById("jumpBack").addEventListener("click", () => seekToFrame(currentAnnotFrame() - Number(document.getElementById("annotJumpStep").value || 30)));
+document.getElementById("jumpForward").addEventListener("click", () => seekToFrame(currentAnnotFrame() + Number(document.getElementById("annotJumpStep").value || 30)));
+document.getElementById("annotTimeline").addEventListener("input", event => seekToFrame(Number(event.target.value)));
+document.getElementById("annotFrameInput").addEventListener("change", event => seekToFrame(Number(event.target.value)));
+document.getElementById("setStartKeyframe").addEventListener("click", setInterpolationStart);
+document.getElementById("cancelInterpolation").addEventListener("click", () => { clearInterpolationStart(); document.getElementById("boxStatus").textContent = "已取消起始关键帧"; });
 
 document.getElementById("annotationRows").addEventListener("click", async event => {
   const loadButton = event.target.closest("[data-load-annotation]");
@@ -649,12 +781,23 @@ document.getElementById("annotationRows").addEventListener("click", async event 
     if (![...regionSelect.options].some(option => option.value === region)) regionSelect.add(new Option(region, region));
     regionSelect.value = region;
     document.getElementById("annotTrack").value = item.track_id || "";
-    state.loadedAnnotation = { ...item, startFrame: Number(item.frame), startBox: [...item.box] };
-    document.getElementById("interpolateAnnotation").disabled = false;
+    state.loadedAnnotation = { ...item };
     markAnnotationDirty(false);
     if (/^#[0-9a-f]{6}$/i.test(item.color || "") && document.getElementById("annotColor")) document.getElementById("annotColor").value = item.color;
-    document.getElementById("boxStatus").textContent = `已载入：${item.label}，可拖框重画后保存`;
+    document.getElementById("boxStatus").textContent = `已载入：${item.label}；可修改后保存，或点“设为起始关键帧”`;
     drawBox();
+    return;
+  }
+  const deleteButton = event.target.closest("[data-delete-annotation]");
+  if (deleteButton) {
+    if (!window.confirm("确定删除这个已保存的人工标注框？操作会留下审计记录。")) return;
+    try {
+      const result = await request("/api/annotations/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ annotation_id: deleteButton.dataset.deleteAnnotation }) });
+      state.box = null;
+      state.loadedAnnotation = null;
+      showToast("annotationToast", result.message);
+      await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory(), loadAnnotationTracks()]);
+    } catch (error) { showToast("annotationToast", error.message, true); }
     return;
   }
   const reviewButton = event.target.closest("[data-review-annotation]");
@@ -679,7 +822,6 @@ async function saveCurrentAnnotation() {
     updateLastSaved();
     state.box = null;
     state.loadedAnnotation = null;
-    document.getElementById("interpolateAnnotation").disabled = true;
     markAnnotationDirty(false);
     await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory()]);
   } catch (error) { showToast("annotationToast", error.message, true); }
@@ -689,20 +831,31 @@ document.getElementById("saveAnnotation").addEventListener("click", saveCurrentA
 document.getElementById("saveCurrentLabelToolbar").addEventListener("click", saveCurrentAnnotation);
 
 document.getElementById("interpolateAnnotation").addEventListener("click", async () => {
-  const start = state.loadedAnnotation;
+  const start = state.interpolationStart;
   if (!start || !state.box) {
-    showToast("annotationToast", "先载入一个起始框，再跳到后续关键帧重画目标框", true);
+    showToast("annotationToast", "请先设置起始关键帧，再到后续帧重画目标框", true);
     return;
   }
   const fps = Number(currentVideoInfo()?.fps || 30);
   const endFrame = Math.round(Number(annotVideo.currentTime) * fps);
-  const endBox = [state.box.x / canvas.width, state.box.y / canvas.height, (state.box.x + state.box.w) / canvas.width, (state.box.y + state.box.h) / canvas.height].map(value => Number(value.toFixed(6)));
+  if (endFrame <= start.frame) {
+    showToast("annotationToast", `当前是第 ${endFrame} 帧，必须跳到起始帧 ${start.frame} 之后`, true);
+    return;
+  }
+  const endBox = normalizedCurrentBox();
+  if (!endBox) {
+    showToast("annotationToast", "请在结束关键帧重新画出目标位置", true);
+    return;
+  }
   try {
-    const result = await request("/api/annotations/interpolate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, start_frame: start.startFrame, end_frame: endFrame, start_box: start.startBox, end_box: endBox, label: document.getElementById("annotLabel").value, region: document.getElementById("annotRegion").value, track_id: document.getElementById("annotTrack").value || start.track_id, reviewer: "本地标注员" }) });
+    const result = await request("/api/annotations/interpolate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, start_frame: start.frame, end_frame: endFrame, start_box: start.box, end_box: endBox, start_annotation_id: start.annotationId, label: start.label, region: start.region, frame_step: Number(document.getElementById("interpolationStep").value || 1), track_id: document.getElementById("annotTrack").value || start.trackId, reviewer: "本地标注员" }) });
     showToast("annotationToast", result.message);
     document.getElementById("annotTrack").value = result.track_id;
+    document.getElementById("boxStatus").textContent = `轨迹 ${result.track_id} 已生成：第 ${result.start_frame}–${result.end_frame} 帧，共 ${result.generated} 个框`;
+    state.box = null;
+    clearInterpolationStart();
     updateLastSaved();
-    await Promise.all([loadAnnotations(), loadAnnotationStats()]);
+    await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory(), loadAnnotationTracks()]);
   } catch (error) { showToast("annotationToast", error.message, true); }
 });
 
@@ -720,6 +873,38 @@ async function saveAnnotationCheckpoint() {
 document.getElementById("saveAnnotationProgress").addEventListener("click", saveAnnotationCheckpoint);
 document.getElementById("saveProgressToolbar").addEventListener("click", saveAnnotationCheckpoint);
 document.getElementById("refreshAnnotationHistory").addEventListener("click", loadAnnotationHistory);
+document.getElementById("refreshTracks").addEventListener("click", loadAnnotationTracks);
+
+document.getElementById("trackRows").addEventListener("click", async event => {
+  const openButton = event.target.closest("[data-open-track]");
+  if (openButton) {
+    document.getElementById("annotTrack").value = openButton.dataset.openTrack;
+    seekToFrame(Number(openButton.dataset.trackFrame));
+    return;
+  }
+  const deleteButton = event.target.closest("[data-delete-track]");
+  if (!deleteButton) return;
+  const trackId = deleteButton.dataset.deleteTrack;
+  if (!window.confirm(`确定删除轨迹 ${trackId} 及它生成的全部框？`)) return;
+  try {
+    const result = await request("/api/annotations/tracks/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, track_id: trackId }) });
+    if (document.getElementById("annotTrack").value === trackId) document.getElementById("annotTrack").value = "";
+    showToast("annotationToast", result.message);
+    await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory(), loadAnnotationTracks()]);
+  } catch (error) { showToast("annotationToast", error.message, true); }
+});
+
+document.getElementById("saveAnnotationScope").addEventListener("click", async () => {
+  const distinguish = document.getElementById("scopeDistinguish").checked;
+  const materialA = document.getElementById("scopeMaterialA").value.trim();
+  const materialB = document.getElementById("scopeMaterialB").value.trim();
+  const requiredLabels = ["PCB板", "操作人员手部", "物料框", distinguish ? `手持${materialA}` : "手持插件", distinguish ? `手持${materialB}` : "插件位置", "插件位置"].filter((item, index, list) => item && list.indexOf(item) === index);
+  try {
+    const result = await request("/api/annotations/scope", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ station_name: document.getElementById("scopeStationName").value, quality_goal: document.getElementById("scopeQualityGoal").value, material_a: materialA, material_b: materialB, distinguish_materials: distinguish, required_labels: requiredLabels, excluded_labels: ["逐个电容", "逐个电阻", "与本工位质量目标无关的元件"], policy: distinguish ? "只标注能判断本工位取料、插装位置和工序正确性的目标。两种插件会影响工艺判定，需要分类。" : "只标注能判断本工位取料、插装位置和工序正确性的目标。两种插件不影响工艺判定，统一标为手持插件。" }) });
+    showToast("annotationToast", result.message);
+    await loadAnnotationScope();
+  } catch (error) { showToast("annotationToast", error.message, true); }
+});
 
 ["annotRegion", "annotLabel", "annotTrack", "annotColor"].forEach(id => document.getElementById(id)?.addEventListener("change", () => {
   if (state.box) markAnnotationDirty(true);
@@ -1328,7 +1513,9 @@ async function init() {
   const video = document.getElementById("sopVideo");
   const info = currentVideoInfo();
   if (info) {
-    video.src = info.presentation_video || info.enhanced_video || info.video;
+    video.src = authenticatedMediaUrl(info.presentation_video || info.enhanced_video || info.video);
+    annotVideo.src = authenticatedMediaUrl(info.source_video);
+    annotVideo.load();
     document.getElementById("videoAlgorithm").textContent = info.algorithm?.split(" + ").slice(0, 2).join(" + ") || "目标检测 + SOP状态机";
     document.getElementById("videoResolution").textContent = info.presentation_resolution || info.resolution || "1620×720";
   }
