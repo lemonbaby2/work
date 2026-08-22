@@ -1,0 +1,44 @@
+{
+  "verified_at_utc": "2026-08-22 07:35:00",
+  "host": "192.168.1.129",
+  "overall": "PASS",
+  "main_database": {
+    "integrity": "ok",
+    "annotation_count": 292009,
+    "restored_account_hashes": 3,
+    "sessions_invalidated_after_restore": true,
+    "backup_before_restore": "runtime/backups/pre_restore_accounts_20260822.sqlite3"
+  },
+  "services": [
+    {"port": 8096, "name": "current-integrated", "unit": "sop-platform.service", "http": 200, "enabled": true, "active": true},
+    {"port": 8099, "name": "version-index", "unit": "sop-version-index.service", "http": 200, "enabled": true, "active": true},
+    {"port": 8101, "name": "library-variant", "unit": "sop-version-library.service", "http": 200, "enabled": true, "active": true},
+    {"port": 8102, "name": "conversation-tracking", "unit": "sop-version-tracking.service", "http": 200, "enabled": true, "active": true},
+    {"port": 8103, "name": "collaborative-annotation", "unit": "sop-version-collaborative.service", "http": 200, "enabled": true, "active": true},
+    {"port": 8104, "name": "web-public", "unit": "sop-version-web-public.service", "http": 200, "enabled": true, "active": true},
+    {"port": 8105, "name": "third-camera", "unit": "sop-version-third-camera.service", "http": 200, "enabled": true, "active": true},
+    {"port": 8081, "name": "cvat-2.73.1", "unit": "docker-compose", "http": 200, "enabled": true, "active": true}
+  ],
+  "browser": {
+    "production_login": "PASS",
+    "annotation_heading": "数据标注与一键导出",
+    "tracking_button_initial_state": "先设置起始关键帧",
+    "version_index_rows": 7,
+    "console_errors": 0,
+    "page_errors": 0,
+    "screenshots": ["restored_main_annotation_20260822.png", "version_index_desktop_20260822.png"]
+  },
+  "core_hashes": {
+    "current_server": "5c81e93fcc3e1883b5203ea8f3446497ddc6136b203762b1986214bfe0e4afcc",
+    "current_index": "76a03d7908619b3fd201a75f519be0f6d49b6c9994956d0d164b1eb6ff2bd1b5",
+    "20260822_library_server": "2fb81ef08b8308ddbf5bd32335ced503f432875252d54eab2a7a64221c4a7ffa",
+    "20260820_collaborative_server": "abd0564d0caceb971424a3668f6be4c7ddc1bc4c72be5dea72db6cb202a48058",
+    "20260819_web_server": "5f3b2ca7371d4d8ebb5375f12a2ba5cbcd9e6bb6baedaccf980f8649f8cb213b",
+    "20260819_third_camera_server_fixed": "38738f0a5d86d53fe1bcbd2f45b891e2474b8864e3d1fe7263d614013af16701"
+  },
+  "security": {
+    "git_excludes": ["passwords", "tokens", "sqlite", "videos", "camera_credentials", "model_weights", "training_data"],
+    "private_environment_mode": "0600",
+    "production_release": "HOLD"
+  }
+}

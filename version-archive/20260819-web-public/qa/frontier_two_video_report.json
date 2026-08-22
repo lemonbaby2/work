@@ -1,0 +1,260 @@
+{
+  "generated_at": "2026-08-16 22:33:37",
+  "model": "YOLOE-26S-seg",
+  "videos": [
+    {
+      "id": "video_40b5",
+      "display_name": "视频四｜仪表板正面卡扣、接插件与紧固复核",
+      "source": "E:\\宁波项目\\测试验视频\\40b5d23aa4113e9334dba38e8016bb50.mp4",
+      "video": "media/仪表板SOP_视频四_40b5_YOLOE26_SAHI_无遮挡版.mp4",
+      "enhanced_video": "media/仪表板SOP_视频四_40b5_YOLOE26_SAHI_无遮挡版.mp4",
+      "presentation_video": "media/仪表板SOP_视频四_40b5_YOLOE26_SAHI_无遮挡版.mp4",
+      "source_video": "media/原始测试视频_40b5.mp4",
+      "frames": 1620,
+      "fps": 30.0,
+      "resolution": "1280×720",
+      "presentation_resolution": "1620×720",
+      "duration_s": 54.0,
+      "algorithm": "YOLOE-26S开放词汇实例分割 + 四窗口重叠切片 + 跨帧平滑 + SOP状态机",
+      "parts": [
+        {
+          "id": "P01",
+          "label": "仪表板总成",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P02",
+          "label": "仪表板骨架",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P03",
+          "label": "饰板总成",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P04",
+          "label": "线束",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P05",
+          "label": "电气接插件",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P06",
+          "label": "电动紧固工具",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P07",
+          "label": "操作人员手部",
+          "mode": "模型紧边框"
+        }
+      ],
+      "steps": [
+        {
+          "id": "S01",
+          "label": "总成到位与外观确认",
+          "start_s": 0.0,
+          "end_s": 8.0
+        },
+        {
+          "id": "S02",
+          "label": "上部卡扣与线束整理",
+          "start_s": 8.0,
+          "end_s": 17.0
+        },
+        {
+          "id": "S03",
+          "label": "中控区域接插件复核",
+          "start_s": 17.0,
+          "end_s": 26.0
+        },
+        {
+          "id": "S04",
+          "label": "右侧支架与紧固点复核",
+          "start_s": 26.0,
+          "end_s": 36.0
+        },
+        {
+          "id": "S05",
+          "label": "左侧与下部紧固复核",
+          "start_s": 36.0,
+          "end_s": 46.0
+        },
+        {
+          "id": "S06",
+          "label": "全局检查与下线确认",
+          "start_s": 46.0,
+          "end_s": 54.0
+        }
+      ],
+      "yolo_detection_counts": {
+        "仪表板总成": 1590,
+        "塑料卡扣候选": 4590,
+        "紧固孔候选": 8490,
+        "饰板总成": 1110,
+        "电气接插件": 105,
+        "螺钉头候选": 1320,
+        "线束": 36,
+        "操作人员手部": 450,
+        "线束插头候选": 270,
+        "螺栓头候选": 45
+      },
+      "visual_result": "PASS（演示时间基准）",
+      "production_release": "HOLD",
+      "release_reason": "缺少真实PSet、扭矩、角度报文与MES回执",
+      "evidence_boundary": "所有新增框均为YOLOE-26S自动预标注，必须人工复核；当前结果不是量产精度验收",
+      "snapshots": [
+        "snapshots/video_40b5/S01_4.0秒.jpg",
+        "snapshots/video_40b5/S02_12.5秒.jpg",
+        "snapshots/video_40b5/S03_21.5秒.jpg",
+        "snapshots/video_40b5/S04_31.0秒.jpg",
+        "snapshots/video_40b5/S05_41.0秒.jpg",
+        "snapshots/video_40b5/S06_50.0秒.jpg"
+      ],
+      "sampled_images": 108,
+      "processing_seconds": 147.6
+    },
+    {
+      "id": "video_ecc57",
+      "display_name": "视频五｜仪表板长流程装配与电动紧固",
+      "source": "E:\\宁波项目\\测试验视频\\ecc57e877fb6345f0f0d8cf9eb3875f3.mp4",
+      "video": "media/仪表板SOP_视频五_ecc57_YOLOE26_SAHI_无遮挡版.mp4",
+      "enhanced_video": "media/仪表板SOP_视频五_ecc57_YOLOE26_SAHI_无遮挡版.mp4",
+      "presentation_video": "media/仪表板SOP_视频五_ecc57_YOLOE26_SAHI_无遮挡版.mp4",
+      "source_video": "media/原始测试视频_ecc57.mp4",
+      "frames": 6536,
+      "fps": 30.0,
+      "resolution": "544×960",
+      "presentation_resolution": "1620×720",
+      "duration_s": 217.87,
+      "algorithm": "YOLOE-26S开放词汇实例分割 + 四窗口重叠切片 + 跨帧平滑 + SOP状态机",
+      "parts": [
+        {
+          "id": "P01",
+          "label": "仪表板总成",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P02",
+          "label": "仪表板骨架",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P03",
+          "label": "饰板总成",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P04",
+          "label": "线束",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P05",
+          "label": "电气接插件",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P06",
+          "label": "电动紧固工具",
+          "mode": "模型紧边框"
+        },
+        {
+          "id": "P07",
+          "label": "操作人员手部",
+          "mode": "模型紧边框"
+        }
+      ],
+      "steps": [
+        {
+          "id": "S01",
+          "label": "工位准备与骨架外观确认",
+          "start_s": 0.0,
+          "end_s": 30.0
+        },
+        {
+          "id": "S02",
+          "label": "线束、卡扣与子件预装",
+          "start_s": 30.0,
+          "end_s": 70.0
+        },
+        {
+          "id": "S03",
+          "label": "模块定位与手工预紧",
+          "start_s": 70.0,
+          "end_s": 110.0
+        },
+        {
+          "id": "S04",
+          "label": "中控饰板与支架压合",
+          "start_s": 110.0,
+          "end_s": 145.0
+        },
+        {
+          "id": "S05",
+          "label": "电动工具分区紧固",
+          "start_s": 145.0,
+          "end_s": 185.0
+        },
+        {
+          "id": "S06",
+          "label": "翻面复核与下线检查",
+          "start_s": 185.0,
+          "end_s": 217.87
+        }
+      ],
+      "yolo_detection_counts": {
+        "饰板总成": 1982,
+        "紧固孔候选": 3000,
+        "塑料卡扣候选": 5467,
+        "仪表板总成": 5426,
+        "操作人员手部": 1812,
+        "电气接插件": 315,
+        "螺钉头候选": 1140,
+        "线束插头候选": 780,
+        "螺栓头候选": 630,
+        "线束": 132,
+        "电动紧固工具": 18
+      },
+      "visual_result": "PASS（演示时间基准）",
+      "production_release": "HOLD",
+      "release_reason": "缺少真实PSet、扭矩、角度报文与MES回执",
+      "evidence_boundary": "所有新增框均为YOLOE-26S自动预标注，必须人工复核；当前结果不是量产精度验收",
+      "snapshots": [
+        "snapshots/video_ecc57/S01_15.0秒.jpg",
+        "snapshots/video_ecc57/S02_50.0秒.jpg",
+        "snapshots/video_ecc57/S03_90.0秒.jpg",
+        "snapshots/video_ecc57/S04_127.5秒.jpg",
+        "snapshots/video_ecc57/S05_165.0秒.jpg",
+        "snapshots/video_ecc57/S06_201.4秒.jpg"
+      ],
+      "sampled_images": 436,
+      "processing_seconds": 354.8
+    }
+  ],
+  "dataset_classes": [
+    "仪表板总成",
+    "仪表板骨架",
+    "饰板总成",
+    "线束",
+    "电气接插件",
+    "电动紧固工具",
+    "操作人员手部",
+    "螺钉头候选",
+    "螺栓头候选",
+    "塑料卡扣候选",
+    "线束插头候选",
+    "紧固孔候选"
+  ],
+  "split_counts": {
+    "train": 382,
+    "val": 81,
+    "test": 81
+  },
+  "review_status": "全部待人工复核",
+  "processing_seconds": 508.7
+}

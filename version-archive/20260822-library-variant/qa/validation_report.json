@@ -1,0 +1,66 @@
+{
+  "verified_at": "2026-08-16 17:45:28",
+  "environment": "D:/Anaconda/envs/dl/python.exe",
+  "overall": "PASS",
+  "results": [
+    {
+      "name": "演示视频可读取",
+      "status": "PASS",
+      "detail": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_YOLOv8逐帧识别演示.mp4"
+    },
+    {
+      "name": "视频帧数与摘要一致",
+      "status": "PASS",
+      "detail": {
+        "video": 2326,
+        "jsonl": 2326
+      }
+    },
+    {
+      "name": "视频分辨率正确",
+      "status": "PASS",
+      "detail": "1280×720"
+    },
+    {
+      "name": "视频帧率正确",
+      "status": "PASS",
+      "detail": 30.0
+    },
+    {
+      "name": "逐帧编号连续",
+      "status": "PASS",
+      "detail": {
+        "first": 0,
+        "last": 2325
+      }
+    },
+    {
+      "name": "每帧含零件标签",
+      "status": "PASS",
+      "detail": "共2326帧"
+    },
+    {
+      "name": "SOP配方完整",
+      "status": "PASS",
+      "detail": {
+        "steps": 6,
+        "parts": 4
+      }
+    },
+    {
+      "name": "模型文件存在",
+      "status": "PASS",
+      "detail": "yolov8s-worldv2.pt"
+    },
+    {
+      "name": "网页七大模块完整",
+      "status": "PASS",
+      "detail": "7个模块"
+    },
+    {
+      "name": "生产边界明确",
+      "status": "PASS",
+      "detail": "HOLD"
+    }
+  ]
+}

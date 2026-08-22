@@ -1,0 +1,18 @@
+[Unit]
+Description=SOP 20260819 web and public variant on port 8104
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/xjai/Desktop/sop xjai/wangye qianhoudaun
+Environment="PYTHONUNBUFFERED=1"
+Environment="SOP_HOST=0.0.0.0"
+Environment="SOP_PORT=8104"
+Environment="SOP_CAMERA_AUTOSTART=0"
+ExecStart=/home/xjai/micromamba/envs/sop/bin/python "/home/xjai/Desktop/sop xjai/wangye qianhoudaun/server.py"
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

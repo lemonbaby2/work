@@ -7,6 +7,11 @@ const state = {
   currentVideoId: "video_0265",
   box: null,
   dragging: false,
+  dragMode: null,
+  dragHandle: null,
+  dragBoxStart: null,
+  dragClientStart: null,
+  dragCanvasScale: null,
   start: null,
   decisionSecond: -1,
   cameraTimer: null,
@@ -23,7 +28,20 @@ const state = {
   annotationSavedAt: null,
   loadedAnnotation: null,
   interpolationStart: null,
+  endKeyframeEdited: false,
+  trackingBusy: false,
+  trackFrameBoxes: new Map(),
+  trackTimelines: new Map(),
+  latestAutosave: null,
+  checkpointPreview: null,
+  annotationAutosaveBusy: false,
+  annotationFrameCallback: null,
+  aiPrelabelTimer: null,
+  renderJobTimer: null,
+  cloudJobTimer: null,
+  annotationRequestController: null,
   algorithms: [],
+  latestCvatTaskId: null,
   productionLines: [],
   datasets: [],
   trainingDatasets: [],
@@ -136,8 +154,11 @@ function switchView(name) {
     loadAnnotationStats();
     loadAnnotationHistory();
     loadAnnotationTracks();
+    loadAnnotationAutosave();
     loadAnnotationScope();
+    loadAiPrelabelStatus();
     loadCvatIntegration();
+    loadCloudStatus();
     state.loaded.annotations = true;
   }
   if (name === "monitor" && !state.loaded.devices) { loadDeviceInventory(); state.loaded.devices = true; }
@@ -155,7 +176,7 @@ function currentVideoInfo() {
 
 function authenticatedMediaUrl(url) {
   if (!url || !String(url).startsWith("media/")) return url;
-  return `${url}${String(url).includes("?") ? "&" : "?"}release=20260821-annotation-v2`;
+  return `${url}${String(url).includes("?") ? "&" : "?"}release=20260821-annotation-v3`;
 }
 
 function renderCameraOptions(cameras = []) {
@@ -201,6 +222,7 @@ function renderVideoSwitcher() {
 }
 
 function selectVideo(videoId) {
+  exitCheckpointPreview(false);
   state.currentVideoId = videoId;
   state.decisionSecond = -1;
   const info = currentVideoInfo();
@@ -213,6 +235,8 @@ function selectVideo(videoId) {
   annotVideo.src = authenticatedMediaUrl(info.source_video);
   annotVideo.load();
   state.loadedAnnotation = null;
+  state.trackFrameBoxes.clear();
+  state.trackTimelines.clear();
   clearInterpolationStart();
   state.box = null;
   markAnnotationDirty(false);
@@ -229,6 +253,7 @@ function selectVideo(videoId) {
   loadAnnotations();
   loadAnnotationHistory();
   loadAnnotationTracks();
+  loadAnnotationAutosave();
 }
 
 function renderLiveSteps() {
@@ -458,25 +483,103 @@ function fitCanvas() {
 
 function canvasPoint(event) {
   const rect = canvas.getBoundingClientRect();
-  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  return {
+    x: (event.clientX - rect.left) * canvas.width / Math.max(1, rect.width),
+    y: (event.clientY - rect.top) * canvas.height / Math.max(1, rect.height),
+  };
+}
+
+function editableBoxHandles(box) {
+  const left = box.x;
+  const right = box.x + box.w;
+  const top = box.y;
+  const bottom = box.y + box.h;
+  const middleX = (left + right) / 2;
+  const middleY = (top + bottom) / 2;
+  return {
+    nw: [left, top], n: [middleX, top], ne: [right, top],
+    e: [right, middleY], se: [right, bottom], s: [middleX, bottom],
+    sw: [left, bottom], w: [left, middleY],
+  };
+}
+
+function hitEditableBox(point) {
+  if (!state.box) return null;
+  for (const [handle, [x, y]] of Object.entries(editableBoxHandles(state.box))) {
+    if (Math.abs(point.x - x) <= 9 && Math.abs(point.y - y) <= 9) return { mode: "resize", handle };
+  }
+  const inside = point.x >= state.box.x && point.x <= state.box.x + state.box.w && point.y >= state.box.y && point.y <= state.box.y + state.box.h;
+  return inside ? { mode: "move", handle: null } : null;
+}
+
+function resizeCursor(handle) {
+  if (["nw", "se"].includes(handle)) return "nwse-resize";
+  if (["ne", "sw"].includes(handle)) return "nesw-resize";
+  if (["n", "s"].includes(handle)) return "ns-resize";
+  return "ew-resize";
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
 }
 
+function interpolatedTrackItems(frame) {
+  const items = [];
+  state.trackTimelines.forEach((timeline, trackId) => {
+    if (!timeline.length || frame < Number(timeline[0].frame) || frame > Number(timeline.at(-1).frame)) return;
+    let low = 0;
+    let high = timeline.length - 1;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const candidateFrame = Number(timeline[middle].frame);
+      if (candidateFrame === frame) {
+        items.push({ ...timeline[middle], playback_interpolated: false });
+        return;
+      }
+      if (candidateFrame < frame) low = middle + 1;
+      else high = middle - 1;
+    }
+    const before = timeline[Math.max(0, high)];
+    const after = timeline[Math.min(timeline.length - 1, low)];
+    const span = Number(after.frame) - Number(before.frame);
+    if (!before || !after || span <= 0) return;
+    const ratio = (frame - Number(before.frame)) / span;
+    const box = before.box.map((value, index) => Number(value) + (Number(after.box[index]) - Number(value)) * ratio);
+    items.push({ ...before, annotation_id: `playback:${trackId}:${frame}`, frame, box, playback_interpolated: true });
+  });
+  return items;
+}
+
+function playbackAnnotationItems(currentTime, fps) {
+  const frame = Math.round(currentTime * fps);
+  if (state.checkpointPreview) {
+    return (state.checkpointPreview.annotations || []).filter(item => Number(item.frame) === frame);
+  }
+  const visible = state.annotationItems.filter(item => Math.abs(Number(item.video_time) - currentTime) <= Math.max(0.05, 1.1 / fps));
+  const source = document.getElementById("annotSourceFilter")?.value || "all";
+  if (["all", "manual"].includes(source)) visible.push(...interpolatedTrackItems(frame));
+  const deduplicated = new Map();
+  visible.forEach(item => deduplicated.set(item.track_id ? `track:${item.track_id}` : String(item.annotation_id), item));
+  return [...deduplicated.values()];
+}
+
 function drawBox() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const currentTime = Number(annotVideo.currentTime || 0);
   const fps = Number(currentVideoInfo()?.fps || 30);
-  state.annotationItems.filter(item => Math.abs(Number(item.video_time) - currentTime) <= Math.max(0.05, 1.1 / fps)).forEach(item => {
+  const drawItems = playbackAnnotationItems(currentTime, fps);
+  drawItems.forEach(item => {
     const [x1, y1, x2, y2] = item.box;
     const x = x1 * canvas.width;
     const y = y1 * canvas.height;
     const width = (x2 - x1) * canvas.width;
     const height = (y2 - y1) * canvas.height;
     const palette = ["#39e2bc", "#ffbd66", "#6db6ff", "#ef6a62", "#c28cff", "#f28f6b"];
-    const paletteIndex = [...new Set(state.annotationItems.map(entry => entry.label))].indexOf(item.label);
+    const paletteIndex = [...new Set(drawItems.map(entry => entry.label))].indexOf(item.label);
     const savedColor = /^#[0-9a-f]{6}$/i.test(item.color || "") ? item.color : null;
     const color = item.review_status === "human_confirmed" ? "#52d6a9" : (item.review_status === "rejected" ? "#ef6a62" : (savedColor || palette[Math.max(0, paletteIndex) % palette.length]));
     ctx.strokeStyle = color;
@@ -496,6 +599,13 @@ function drawBox() {
     ctx.fillStyle = "rgba(12,143,121,.15)";
     ctx.fillRect(state.box.x, state.box.y, state.box.w, state.box.h);
     ctx.strokeRect(state.box.x, state.box.y, state.box.w, state.box.h);
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#0c8f79";
+    ctx.lineWidth = 2;
+    Object.values(editableBoxHandles(state.box)).forEach(([x, y]) => {
+      ctx.fillRect(x - 5, y - 5, 10, 10);
+      ctx.strokeRect(x - 5, y - 5, 10, 10);
+    });
   }
 }
 
@@ -524,7 +634,7 @@ function annotationEvidenceDataUrl() {
   return output.toDataURL("image/jpeg", 0.88);
 }
 
-function renderAnnotationRows(items) {
+function renderAnnotationRows(items, readOnly = false) {
   const rows = document.getElementById("annotationRows");
   document.getElementById("annotationResultCount").textContent = `${items.length} 条`;
   if (!items.length) {
@@ -539,25 +649,40 @@ function renderAnnotationRows(items) {
     <td><span class="source-tag ${item.source_kind}">${sourceNames[item.source_kind] || escapeHtml(item.source_kind)}</span><small title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</small></td>
     <td>${item.confidence == null ? "--" : `${(Number(item.confidence) * 100).toFixed(1)}%`}</td>
     <td><span class="review-state ${item.review_status}">${statusNames[item.review_status] || escapeHtml(item.review_status)}</span></td>
-    <td><div class="row-actions"><button class="ghost" data-load-annotation="${escapeHtml(item.annotation_id)}">载入框</button><button class="ghost" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="human_confirmed">确认</button><button class="ghost danger-action" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="rejected">驳回</button>${item.source_kind === "manual" ? `<button class="ghost danger-action" data-delete-annotation="${escapeHtml(item.annotation_id)}">删除</button>` : ""}</div></td>
+    <td>${readOnly ? '<span class="review-state pending">历史只读</span>' : `<div class="row-actions"><button class="ghost" data-load-annotation="${escapeHtml(item.annotation_id)}">载入框</button><button class="ghost" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="human_confirmed">确认</button><button class="ghost danger-action" data-review-annotation="${escapeHtml(item.annotation_id)}" data-review-status="rejected">驳回</button><button class="ghost danger-action" data-delete-annotation="${escapeHtml(item.annotation_id)}" data-delete-source="${escapeHtml(item.source_kind)}">删除</button></div>`}</td>
   </tr>`).join("");
 }
 
 async function loadAnnotations() {
   if (!state.catalog) return;
+  if (state.checkpointPreview) {
+    const items = playbackAnnotationItems(Number(annotVideo.currentTime || 0), Number(currentVideoInfo()?.fps || 30));
+    state.annotationItems = items;
+    renderAnnotationRows(items, true);
+    drawBox();
+    return;
+  }
   const source = document.getElementById("annotSourceFilter").value;
   const status = document.getElementById("annotStatusFilter").value;
   const time = Number(annotVideo.currentTime || 0);
   document.getElementById("annotFrameTime").textContent = `${time.toFixed(3)} 秒`;
+  if (state.annotationRequestController) state.annotationRequestController.abort();
+  const controller = new AbortController();
+  state.annotationRequestController = controller;
   try {
-    const result = await request(`/api/annotations?video=${encodeURIComponent(state.currentVideoId)}&time=${time.toFixed(3)}&source=${encodeURIComponent(source)}&status=${encodeURIComponent(status)}&limit=300`);
+    const result = await request(`/api/annotations?video=${encodeURIComponent(state.currentVideoId)}&time=${time.toFixed(3)}&source=${encodeURIComponent(source)}&status=${encodeURIComponent(status)}&limit=300`, { signal: controller.signal });
+    if (state.annotationRequestController !== controller) return;
     state.annotationItems = result.items || [];
     renderAnnotationRows(state.annotationItems);
+    restoreSelectedTrackBox(state.annotationItems);
     drawBox();
   } catch (error) {
+    if (error.name === "AbortError") return;
     state.annotationItems = [];
     document.getElementById("annotationRows").innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
     document.getElementById("annotationResultCount").textContent = "读取失败";
+  } finally {
+    if (state.annotationRequestController === controller) state.annotationRequestController = null;
   }
 }
 
@@ -577,6 +702,40 @@ async function loadAnnotationStats() {
   }
 }
 
+async function loadAiPrelabelStatus() {
+  try {
+    const job = await request("/api/annotations/prelabel/status");
+    const percent = Number(job.progress || 0);
+    document.getElementById("aiPrelabelMeter").style.width = `${Math.min(100, Math.max(0, percent))}%`;
+    document.getElementById("aiPrelabelProgress").textContent = `${percent.toFixed(2)}%`;
+    const statusNames = { not_started: "未启动", queued: "排队中", loading_model: "加载模型", running: "运行中", paused: "已暂停", completed: "已完成", failed: "失败", interrupted: "已中断" };
+    document.getElementById("aiPrelabelMessage").textContent = job.message || statusNames[job.status] || job.status;
+    const eta = Number(job.eta_seconds || 0);
+    const missing = (job.missing_video_ids || []).length;
+    document.getElementById("aiPrelabelDetail").textContent = `${statusNames[job.status] || job.status} · ${Number(job.sampled_frames_completed || 0).toLocaleString("zh-CN")}/${Number(job.sampled_frames_total || 0).toLocaleString("zh-CN")} 个采样帧 · ${Number(job.detections_total || 0).toLocaleString("zh-CN")} 个候选框${eta > 0 ? ` · 预计剩余 ${Math.ceil(eta / 60)} 分钟` : ""}${missing ? ` · ${missing} 段源文件缺失，网盘拉回后补跑` : ""}`;
+    document.getElementById("startAiPrelabel").disabled = Boolean(job.running);
+    document.getElementById("pauseAiPrelabel").disabled = !job.running;
+    window.clearTimeout(state.aiPrelabelTimer);
+    state.aiPrelabelTimer = job.running ? window.setTimeout(loadAiPrelabelStatus, 5000) : null;
+    if (job.status === "completed") loadAnnotationStats();
+  } catch (error) {
+    document.getElementById("aiPrelabelMessage").textContent = `状态读取失败：${error.message}`;
+  }
+}
+
+async function controlAiPrelabel(action) {
+  const button = action === "pause" ? document.getElementById("pauseAiPrelabel") : document.getElementById("startAiPrelabel");
+  button.disabled = true;
+  try {
+    const result = await request("/api/annotations/prelabel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    showToast("annotationToast", result.message);
+    await loadAiPrelabelStatus();
+  } catch (error) {
+    showToast("annotationToast", error.message, true);
+    button.disabled = false;
+  }
+}
+
 async function loadAnnotationHistory() {
   const rows = document.getElementById("annotationHistoryRows");
   if (!rows || !state.currentVideoId) return;
@@ -589,7 +748,7 @@ async function loadAnnotationHistory() {
       rows.innerHTML = "<span>尚未保存。画框后先保存这个框，完成一批后再保存本次进度。</span>";
       return;
     }
-    const checkpointHtml = checkpoints.map(item => `<div class="history-row"><b>第 ${item.round} 次保存</b><span>${escapeHtml(item.recorded_at)} · 第 ${item.current_frame} 帧 · ${item.annotation_count} 个框</span><small>${escapeHtml((item.regions || []).join("、") || "尚未分区")}</small></div>`).join("");
+    const checkpointHtml = checkpoints.map(item => `<button class="history-row history-action" data-view-checkpoint="${escapeHtml(item.checkpoint_id)}" type="button"><b>第 ${item.round} 次保存</b><em>点击回溯</em><span>${escapeHtml(item.recorded_at)} · 第 ${item.current_frame} 帧 · ${item.annotation_count} 个框</span><small>${escapeHtml((item.regions || []).join("、") || "尚未分区")}</small></button>`).join("");
     const regionHtml = regions.map(item => `<div class="history-row region-summary"><b>${escapeHtml(item.region)}</b><span>${item.annotation_count} 个已落库框</span><small>最近 ${escapeHtml(item.last_saved_at || "--")}</small></div>`).join("");
     rows.innerHTML = checkpointHtml + regionHtml;
   } catch (error) {
@@ -597,17 +756,70 @@ async function loadAnnotationHistory() {
   }
 }
 
+async function viewAnnotationCheckpoint(checkpointId) {
+  try {
+    const result = await request(`/api/annotations/checkpoint?video=${encodeURIComponent(state.currentVideoId)}&checkpoint=${encodeURIComponent(checkpointId)}`);
+    const snapshot = result.snapshot;
+    state.checkpointPreview = snapshot;
+    state.box = null;
+    state.loadedAnnotation = null;
+    annotVideo.pause();
+    const banner = document.getElementById("checkpointPreview");
+    banner.hidden = false;
+    document.getElementById("checkpointPreviewTitle").textContent = `保存点 ${snapshot.recorded_at} · 第 ${snapshot.current_frame} 帧`;
+    document.getElementById("checkpointPreviewDetail").textContent = `只读回溯 · 当时共 ${Number(snapshot.annotation_count || 0)} 个框，不会改动当前数据库`;
+    document.getElementById("restoreCheckpointDraft").disabled = !snapshot.draft;
+    annotVideo.currentTime = Math.max(0, Number(snapshot.current_time || 0));
+    await loadAnnotations();
+    document.querySelector(".annot-stage")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    showToast("annotationToast", `已打开 ${snapshot.recorded_at} 的只读保存点`);
+  } catch (error) {
+    showToast("annotationToast", error.message, true);
+  }
+}
+
+function exitCheckpointPreview(reload = true) {
+  if (!state.checkpointPreview) return;
+  state.checkpointPreview = null;
+  const banner = document.getElementById("checkpointPreview");
+  if (banner) banner.hidden = true;
+  if (reload) loadAnnotations();
+}
+
+function restoreCheckpointDraft() {
+  const snapshot = state.checkpointPreview;
+  const draft = snapshot?.draft;
+  if (!snapshot || !draft) return;
+  exitCheckpointPreview(false);
+  annotVideo.pause();
+  annotVideo.currentTime = Math.max(0, Number(snapshot.current_time || 0));
+  if (Array.isArray(draft.box) && draft.box.length === 4) {
+    const [x1, y1, x2, y2] = draft.box;
+    state.box = { x: x1 * canvas.width, y: y1 * canvas.height, w: (x2 - x1) * canvas.width, h: (y2 - y1) * canvas.height };
+    document.getElementById("annotLabel").value = draft.label || document.getElementById("annotLabel").value;
+    document.getElementById("annotRegion").value = draft.region || document.getElementById("annotRegion").value;
+    document.getElementById("annotTrack").value = draft.track_id || "";
+    if (/^#[0-9a-f]{6}$/i.test(draft.color || "")) document.getElementById("annotColor").value = draft.color;
+    markAnnotationDirty(true);
+  }
+  document.getElementById("boxStatus").textContent = `已从 ${snapshot.recorded_at} 恢复草稿，保存前不会覆盖当前标注`;
+  loadAnnotations();
+  drawBox();
+}
+
 async function loadAnnotationScope() {
   try {
     const result = await request("/api/annotations/scope");
     const scope = result.scope || {};
     document.getElementById("scopeStationName").value = scope.station_name || "";
+    document.getElementById("scopeStationType").value = scope.station_type || "assembly";
     document.getElementById("scopeQualityGoal").value = scope.quality_goal || "";
     document.getElementById("scopeMaterialA").value = scope.material_a || "";
     document.getElementById("scopeMaterialB").value = scope.material_b || "";
     document.getElementById("scopeDistinguish").checked = Boolean(scope.distinguish_materials);
     document.getElementById("scopeRequiredLabels").textContent = (scope.required_labels || []).join("、");
     document.getElementById("scopeExcludedLabels").textContent = (scope.excluded_labels || []).join("、");
+    document.getElementById("scopeVerificationPoints").textContent = (scope.verification_points || []).join("、");
     document.getElementById("scopePolicy").textContent = scope.policy || "";
     document.getElementById("scopeStatus").textContent = scope.distinguish_materials ? "按工艺区分物料" : "插件使用通用类别";
   } catch (error) {
@@ -620,11 +832,26 @@ async function loadAnnotationTracks() {
   if (!rows || !state.currentVideoId) return;
   try {
     const result = await request(`/api/annotations/tracks?video=${encodeURIComponent(state.currentVideoId)}`);
+    state.trackFrameBoxes.clear();
+    state.trackTimelines.clear();
+    (result.items || []).forEach(track => {
+      const timeline = (track.shapes || []).map(shape => ({
+        ...shape,
+        track_id: track.track_id,
+        label: track.label,
+        region: track.region,
+        source_kind: "manual",
+        review_status: "pending",
+      })).sort((left, right) => Number(left.frame) - Number(right.frame));
+      state.trackTimelines.set(track.track_id, timeline);
+      timeline.forEach(cacheTrackShape);
+    });
     if (!result.items?.length) {
       rows.innerHTML = "<span>尚未生成轨迹。设置起始关键帧并到后续帧生成后，这里会显示帧范围。</span>";
       return;
     }
-    rows.innerHTML = result.items.map(track => `<div class="track-row"><div><b>${escapeHtml(track.track_id)}</b><span>${escapeHtml(track.label)} · ${escapeHtml(track.region)} · 第 ${track.start_frame}–${track.end_frame} 帧</span><small>已生成 ${track.frame_count} 个框：${escapeHtml((track.frames || []).slice(0, 18).join("、"))}${track.frame_count > 18 ? "…" : ""}</small></div><div><button class="ghost" data-open-track="${escapeHtml(track.track_id)}" data-track-frame="${track.start_frame}">查看起始帧</button><button class="ghost danger-action" data-delete-track="${escapeHtml(track.track_id)}">删除轨迹</button></div></div>`).join("");
+    restoreCachedTrackBox(currentAnnotFrame());
+    rows.innerHTML = result.items.map(track => `<div class="track-row"><div><b>${escapeHtml(track.track_id)}</b><span>${escapeHtml(track.label)} · ${escapeHtml(track.region)} · 第 ${track.start_frame}–${track.end_frame} 帧</span><small>已生成 ${track.frame_count} 个框：${escapeHtml((track.frames || []).slice(0, 18).join("、"))}${track.frame_count > 18 ? "…" : ""}</small></div><div class="track-actions"><button class="ghost" data-open-track="${escapeHtml(track.track_id)}" data-track-frame="${track.start_frame}">查看起始帧</button><label>删段 <input type="number" min="${track.start_frame}" max="${track.end_frame}" value="${track.start_frame}" data-segment-start="${escapeHtml(track.track_id)}" aria-label="删除片段起始帧"> - <input type="number" min="${track.start_frame}" max="${track.end_frame}" value="${track.end_frame}" data-segment-end="${escapeHtml(track.track_id)}" aria-label="删除片段结束帧"></label><button class="ghost danger-action" data-delete-track-segment="${escapeHtml(track.track_id)}">删除此段</button><button class="ghost danger-action" data-delete-track="${escapeHtml(track.track_id)}">删除整轨</button></div></div>`).join("");
   } catch (error) {
     rows.innerHTML = `<span>轨迹读取失败：${escapeHtml(error.message)}</span>`;
   }
@@ -637,6 +864,68 @@ function currentAnnotFrame() {
 function normalizedCurrentBox() {
   if (!state.box || state.box.w < 5 || state.box.h < 5) return null;
   return [state.box.x / canvas.width, state.box.y / canvas.height, (state.box.x + state.box.w) / canvas.width, (state.box.y + state.box.h) / canvas.height].map(value => Number(value.toFixed(6)));
+}
+
+function trackFrameKey(trackId, frame) {
+  return `${trackId}:${Number(frame)}`;
+}
+
+function cacheTrackShape(item) {
+  if (!item?.track_id || !Array.isArray(item.box) || item.box.length !== 4) return;
+  state.trackFrameBoxes.set(trackFrameKey(item.track_id, item.frame), { ...item });
+}
+
+function syncEditableBoxToPlaybackFrame(frame) {
+  if (state.annotationDirty || state.dragging || annotVideo.paused) return;
+  const trackId = document.getElementById("annotTrack")?.value.trim();
+  const item = trackId ? interpolatedTrackItems(frame).find(candidate => candidate.track_id === trackId) : null;
+  if (!item) {
+    state.box = null;
+    state.loadedAnnotation = null;
+    return;
+  }
+  const [x1, y1, x2, y2] = item.box;
+  state.box = { x: x1 * canvas.width, y: y1 * canvas.height, w: (x2 - x1) * canvas.width, h: (y2 - y1) * canvas.height };
+  state.loadedAnnotation = item.playback_interpolated ? null : { ...item };
+}
+
+function renderAnnotationPlaybackFrame() {
+  syncEditableBoxToPlaybackFrame(currentAnnotFrame());
+  document.getElementById("annotFrameTime").textContent = `${Number(annotVideo.currentTime).toFixed(3)} 秒`;
+  updatePlaybackUi();
+  drawBox();
+  if (!annotVideo.paused && typeof annotVideo.requestVideoFrameCallback === "function") {
+    state.annotationFrameCallback = annotVideo.requestVideoFrameCallback(renderAnnotationPlaybackFrame);
+  } else {
+    state.annotationFrameCallback = null;
+  }
+}
+
+function loadEditableBox(item, statusText) {
+  if (!item?.box || state.annotationDirty || state.dragging) return false;
+  const [x1, y1, x2, y2] = item.box;
+  state.box = { x: x1 * canvas.width, y: y1 * canvas.height, w: (x2 - x1) * canvas.width, h: (y2 - y1) * canvas.height };
+  state.loadedAnnotation = item.annotation_id ? { ...item } : null;
+  if (statusText) document.getElementById("boxStatus").textContent = statusText;
+  updateInterpolationControls();
+  return true;
+}
+
+function restoreCachedTrackBox(frame) {
+  const trackId = document.getElementById("annotTrack")?.value.trim();
+  if (!trackId || state.interpolationStart) return false;
+  const item = state.trackFrameBoxes.get(trackFrameKey(trackId, frame));
+  return loadEditableBox(item, item ? `第 ${frame} 帧轨迹框已载入，可直接拖动或缩放后保存` : "");
+}
+
+function restoreSelectedTrackBox(items) {
+  const trackId = document.getElementById("annotTrack")?.value.trim();
+  if (!trackId || state.interpolationStart || state.annotationDirty) return false;
+  const frame = currentAnnotFrame();
+  const item = items.find(candidate => candidate.source_kind === "manual" && candidate.track_id === trackId && Number(candidate.frame) === frame);
+  if (!item) return false;
+  cacheTrackShape(item);
+  return loadEditableBox(item, `第 ${frame} 帧轨迹框已载入，可直接拖动或缩放后保存`);
 }
 
 function formatAnnotTime(seconds) {
@@ -666,11 +955,25 @@ function seekToFrame(frame) {
   const maxFrame = Math.max(0, Number(currentVideoInfo()?.frames || Math.round(Number(annotVideo.duration || 0) * fps)) - 1);
   const target = Math.min(maxFrame, Math.max(0, Number(frame || 0)));
   if (target !== currentAnnotFrame()) {
-    state.box = null;
     state.loadedAnnotation = null;
     markAnnotationDirty(false);
+    const start = state.interpolationStart;
+    if (restoreCachedTrackBox(target)) {
+      state.endKeyframeEdited = false;
+    } else if (start && target > start.frame) {
+      const [x1, y1, x2, y2] = start.box;
+      state.box = { x: x1 * canvas.width, y: y1 * canvas.height, w: (x2 - x1) * canvas.width, h: (y2 - y1) * canvas.height };
+      state.endKeyframeEdited = false;
+      document.getElementById("boxStatus").textContent = `第 ${target} 帧：可直接自动跟踪；也可拖动或缩放框作为结束位置校正`;
+    } else {
+      state.box = null;
+      state.endKeyframeEdited = false;
+    }
+    state.annotationItems = [];
+    drawBox();
   }
   annotVideo.currentTime = target / fps;
+  updateInterpolationControls();
 }
 
 function toggleAnnotPlayback() {
@@ -680,13 +983,42 @@ function toggleAnnotPlayback() {
 
 function clearInterpolationStart() {
   state.interpolationStart = null;
+  state.endKeyframeEdited = false;
   const button = document.getElementById("interpolateAnnotation");
   const cancel = document.getElementById("cancelInterpolation");
   if (button) button.disabled = true;
   if (cancel) cancel.disabled = true;
   const panel = document.getElementById("keyframeState");
-  if (panel) panel.innerHTML = "<b>尚未设置起始关键帧</b><span>在起始帧画框后点“设为起始关键帧”，再到后续帧重画后生成轨迹。</span>";
+  if (panel) panel.innerHTML = "<b>尚未设置起始关键帧</b><span>在起始帧画框后设为关键帧，跳到后续帧即可自动跟踪；移动结束框可作为人工校正。</span>";
+  updateInterpolationControls();
 }
+
+function generatedTrackId(frame) {
+  return `TRK-${state.currentVideoId}-${frame}-${Date.now().toString(36).toUpperCase()}`;
+}
+
+function updateInterpolationControls() {
+  const boxReady = Boolean(normalizedCurrentBox());
+  const start = state.interpolationStart;
+  const currentFrame = currentAnnotFrame();
+  const setStart = document.getElementById("setStartKeyframe");
+  const interpolate = document.getElementById("interpolateAnnotation");
+  if (setStart) setStart.disabled = !boxReady;
+  if (!interpolate) return;
+  const endReady = Boolean(start && boxReady && currentFrame > start.frame);
+  interpolate.disabled = !endReady || state.trackingBusy;
+  interpolate.textContent = state.trackingBusy
+    ? "正在读取视频并跟踪…"
+    : (!start
+      ? "先设置起始关键帧"
+      : (currentFrame <= start.frame
+        ? "请跳到后续帧"
+        : (!boxReady
+          ? "请保留或画出目标框"
+          : (state.endKeyframeEdited ? "自动跟踪并按结束框校正" : "自动跟踪到当前帧"))));
+}
+
+updateInterpolationControls();
 
 function setInterpolationStart() {
   const box = normalizedCurrentBox();
@@ -696,42 +1028,102 @@ function setInterpolationStart() {
   }
   const frame = currentAnnotFrame();
   const trackInput = document.getElementById("annotTrack");
+  const trackId = trackInput.value.trim() || generatedTrackId(frame);
+  trackInput.value = trackId;
   state.interpolationStart = {
     frame,
     box,
     label: document.getElementById("annotLabel").value,
     region: document.getElementById("annotRegion").value,
-    trackId: trackInput.value.trim(),
+    trackId,
     annotationId: state.loadedAnnotation?.source_kind === "manual" && Number(state.loadedAnnotation.frame) === frame ? state.loadedAnnotation.annotation_id : "",
   };
-  document.getElementById("interpolateAnnotation").disabled = false;
+  state.endKeyframeEdited = false;
   document.getElementById("cancelInterpolation").disabled = false;
-  document.getElementById("keyframeState").innerHTML = `<b>起始关键帧：第 ${frame} 帧 · ${escapeHtml(state.interpolationStart.label)}</b><span>现在跳到后续帧，在目标新位置重画框，然后点“生成轨迹到当前帧”。${state.interpolationStart.trackId ? `轨迹 ID：${escapeHtml(state.interpolationStart.trackId)}` : "轨迹 ID 将由系统生成。"}</span>`;
-  document.getElementById("boxStatus").textContent = `已记住第 ${frame} 帧起始框，请跳到后续帧重画`;
+  document.getElementById("keyframeState").innerHTML = `<b>起始关键帧：第 ${frame} 帧 · ${escapeHtml(state.interpolationStart.label)}</b><span>轨迹 ${escapeHtml(trackId)} 已建立。跳到后续帧可直接自动跟踪；若移动或缩放结束框，系统会按该关键帧校正轨迹。</span>`;
+  document.getElementById("boxStatus").textContent = `轨迹 ${trackId}：已记住第 ${frame} 帧起始框`;
   markAnnotationDirty(false);
+  updateInterpolationControls();
 }
 
 canvas.addEventListener("pointerdown", event => {
+  if (state.checkpointPreview) {
+    showToast("annotationToast", "当前是只读保存点，请先返回当前标注再修改");
+    return;
+  }
+  const point = canvasPoint(event);
+  const rect = canvas.getBoundingClientRect();
+  const hit = hitEditableBox(point);
   state.dragging = true;
-  state.start = canvasPoint(event);
-  state.box = { x: state.start.x, y: state.start.y, w: 0, h: 0 };
+  state.start = point;
+  state.dragMode = hit?.mode || "draw";
+  state.dragHandle = hit?.handle || null;
+  state.dragBoxStart = state.box ? { ...state.box } : null;
+  state.dragClientStart = { x: event.clientX, y: event.clientY };
+  state.dragCanvasScale = { x: canvas.width / Math.max(1, rect.width), y: canvas.height / Math.max(1, rect.height) };
+  if (state.dragMode === "draw") state.box = { x: point.x, y: point.y, w: 0, h: 0 };
   markAnnotationDirty(true);
   canvas.setPointerCapture(event.pointerId);
 });
 canvas.addEventListener("pointermove", event => {
-  if (!state.dragging) return;
-  const point = canvasPoint(event);
-  state.box = { x: Math.min(state.start.x, point.x), y: Math.min(state.start.y, point.y), w: Math.abs(point.x - state.start.x), h: Math.abs(point.y - state.start.y) };
+  const point = state.dragging && state.dragClientStart && state.dragCanvasScale
+    ? {
+      x: state.start.x + (event.clientX - state.dragClientStart.x) * state.dragCanvasScale.x,
+      y: state.start.y + (event.clientY - state.dragClientStart.y) * state.dragCanvasScale.y,
+    }
+    : canvasPoint(event);
+  if (!state.dragging) {
+    const hit = hitEditableBox(point);
+    canvas.style.cursor = hit?.mode === "move" ? "move" : (hit?.mode === "resize" ? resizeCursor(hit.handle) : "crosshair");
+    return;
+  }
+  if (state.dragMode === "move" && state.dragBoxStart) {
+    const nextX = clamp(state.dragBoxStart.x + point.x - state.start.x, 0, canvas.width - state.dragBoxStart.w);
+    const nextY = clamp(state.dragBoxStart.y + point.y - state.start.y, 0, canvas.height - state.dragBoxStart.h);
+    state.box = { ...state.dragBoxStart, x: nextX, y: nextY };
+  } else if (state.dragMode === "resize" && state.dragBoxStart) {
+    let left = state.dragBoxStart.x;
+    let right = state.dragBoxStart.x + state.dragBoxStart.w;
+    let top = state.dragBoxStart.y;
+    let bottom = state.dragBoxStart.y + state.dragBoxStart.h;
+    if (state.dragHandle.includes("w")) left = clamp(point.x, 0, right - 5);
+    if (state.dragHandle.includes("e")) right = clamp(point.x, left + 5, canvas.width);
+    if (state.dragHandle.includes("n")) top = clamp(point.y, 0, bottom - 5);
+    if (state.dragHandle.includes("s")) bottom = clamp(point.y, top + 5, canvas.height);
+    state.box = { x: left, y: top, w: right - left, h: bottom - top };
+  } else {
+    state.box = { x: Math.min(state.start.x, point.x), y: Math.min(state.start.y, point.y), w: Math.abs(point.x - state.start.x), h: Math.abs(point.y - state.start.y) };
+  }
+  if (state.interpolationStart && currentAnnotFrame() > state.interpolationStart.frame) state.endKeyframeEdited = true;
   drawBox();
-  document.getElementById("boxStatus").textContent = `框选 ${Math.round(state.box.w)} × ${Math.round(state.box.h)} 像素`;
+  const actionName = state.dragMode === "move" ? "移动" : (state.dragMode === "resize" ? "缩放" : "框选");
+  document.getElementById("boxStatus").textContent = `${actionName} ${Math.round(state.box.w)} × ${Math.round(state.box.h)} 像素`;
+  updateInterpolationControls();
 });
-canvas.addEventListener("pointerup", () => state.dragging = false);
+function finishBoxEdit() {
+  state.dragging = false;
+  state.dragMode = null;
+  state.dragHandle = null;
+  state.dragBoxStart = null;
+  state.dragClientStart = null;
+  state.dragCanvasScale = null;
+  canvas.style.cursor = "crosshair";
+  updateInterpolationControls();
+}
+canvas.addEventListener("pointerup", finishBoxEdit);
+canvas.addEventListener("pointercancel", finishBoxEdit);
+canvas.addEventListener("lostpointercapture", finishBoxEdit);
+window.addEventListener("pointerup", () => {
+  if (state.dragging) finishBoxEdit();
+});
 document.getElementById("clearBox").addEventListener("click", () => {
   state.box = null;
+  state.endKeyframeEdited = false;
   drawBox();
   document.getElementById("boxStatus").textContent = "请在视频上拖动鼠标框选";
   state.loadedAnnotation = null;
   markAnnotationDirty(false);
+  updateInterpolationControls();
 });
 window.addEventListener("resize", fitCanvas);
 annotVideo.addEventListener("loadedmetadata", () => { fitCanvas(); updatePlaybackUi(); loadAnnotations(); });
@@ -739,10 +1131,16 @@ annotVideo.addEventListener("timeupdate", () => {
   document.getElementById("annotFrameTime").textContent = `${Number(annotVideo.currentTime).toFixed(3)} 秒`;
   updatePlaybackUi();
   drawBox();
+  updateInterpolationControls();
 });
 annotVideo.addEventListener("seeked", loadAnnotations);
 annotVideo.addEventListener("pause", loadAnnotations);
-annotVideo.addEventListener("play", updatePlaybackUi);
+annotVideo.addEventListener("play", () => {
+  if (state.annotationFrameCallback !== null && typeof annotVideo.cancelVideoFrameCallback === "function") {
+    annotVideo.cancelVideoFrameCallback(state.annotationFrameCallback);
+  }
+  renderAnnotationPlaybackFrame();
+});
 annotVideo.addEventListener("ended", updatePlaybackUi);
 
 document.getElementById("annotVideoSelect").addEventListener("change", event => selectVideo(event.target.value));
@@ -786,15 +1184,19 @@ document.getElementById("annotationRows").addEventListener("click", async event 
     if (/^#[0-9a-f]{6}$/i.test(item.color || "") && document.getElementById("annotColor")) document.getElementById("annotColor").value = item.color;
     document.getElementById("boxStatus").textContent = `已载入：${item.label}；可修改后保存，或点“设为起始关键帧”`;
     drawBox();
+    updateInterpolationControls();
     return;
   }
   const deleteButton = event.target.closest("[data-delete-annotation]");
   if (deleteButton) {
-    if (!window.confirm("确定删除这个已保存的人工标注框？操作会留下审计记录。")) return;
+    const sourceNames = { prelabel: "AI预标注", candidate: "小目标候选", manual: "人工标注" };
+    const sourceName = sourceNames[deleteButton.dataset.deleteSource] || "标注";
+    if (!window.confirm(`确定删除这个${sourceName}框？删除后不再显示或进入导出，操作会留下审计记录。`)) return;
     try {
-      const result = await request("/api/annotations/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ annotation_id: deleteButton.dataset.deleteAnnotation }) });
+      const result = await request("/api/annotations/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ annotation_id: deleteButton.dataset.deleteAnnotation, reason: `人工复审删除${sourceName}框` }) });
       state.box = null;
       state.loadedAnnotation = null;
+      updateInterpolationControls();
       showToast("annotationToast", result.message);
       await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory(), loadAnnotationTracks()]);
     } catch (error) { showToast("annotationToast", error.message, true); }
@@ -810,6 +1212,10 @@ document.getElementById("annotationRows").addEventListener("click", async event 
 });
 
 async function saveCurrentAnnotation() {
+  if (state.checkpointPreview) {
+    showToast("annotationToast", "历史保存点为只读，请先返回当前标注", true);
+    return;
+  }
   if (!state.box || state.box.w < 5 || state.box.h < 5) {
     showToast("annotationToast", "请先在视频画面上框选一个零件", true);
     return;
@@ -817,7 +1223,8 @@ async function saveCurrentAnnotation() {
   const normalized = [state.box.x / canvas.width, state.box.y / canvas.height, (state.box.x + state.box.w) / canvas.width, (state.box.y + state.box.h) / canvas.height].map(value => Number(value.toFixed(5)));
   try {
     const editableId = state.loadedAnnotation?.source_kind === "manual" && Number(state.loadedAnnotation.frame) === Math.round(annotVideo.currentTime * Number(currentVideoInfo()?.fps || 30)) ? state.loadedAnnotation.annotation_id : undefined;
-    const result = await request("/api/annotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ annotation_id: editableId, video_id: state.currentVideoId, video: currentVideoInfo()?.source_video || "原始测试视频_de02.mp4", video_time: Number(annotVideo.currentTime.toFixed(3)), region: document.getElementById("annotRegion").value, track_id: document.getElementById("annotTrack").value, label: document.getElementById("annotLabel").value, color: document.getElementById("annotColor")?.value || "#39e2bc", box: normalized, evidence_data_url: annotationEvidenceDataUrl(), review_status: "pending", reviewer: "本地标注员", source: "平台人工标注" }) });
+    const supersedes = ["prelabel", "candidate"].includes(state.loadedAnnotation?.source_kind) ? state.loadedAnnotation : null;
+    const result = await request("/api/annotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ annotation_id: editableId, supersedes_annotation_id: supersedes?.annotation_id, supersedes_source_kind: supersedes?.source_kind, video_id: state.currentVideoId, video: currentVideoInfo()?.source_video || "原始测试视频_de02.mp4", video_time: Number(annotVideo.currentTime.toFixed(3)), region: document.getElementById("annotRegion").value, track_id: document.getElementById("annotTrack").value, label: document.getElementById("annotLabel").value, color: document.getElementById("annotColor")?.value || "#39e2bc", box: normalized, evidence_data_url: annotationEvidenceDataUrl(), review_status: "pending", reviewer: "本地标注员", source: supersedes ? "人工修正AI预标注" : "平台人工标注" }) });
     showToast("annotationToast", result.message);
     updateLastSaved();
     state.box = null;
@@ -833,7 +1240,7 @@ document.getElementById("saveCurrentLabelToolbar").addEventListener("click", sav
 document.getElementById("interpolateAnnotation").addEventListener("click", async () => {
   const start = state.interpolationStart;
   if (!start || !state.box) {
-    showToast("annotationToast", "请先设置起始关键帧，再到后续帧重画目标框", true);
+    showToast("annotationToast", "请先设置起始关键帧，再跳到后续帧", true);
     return;
   }
   const fps = Number(currentVideoInfo()?.fps || 30);
@@ -842,44 +1249,150 @@ document.getElementById("interpolateAnnotation").addEventListener("click", async
     showToast("annotationToast", `当前是第 ${endFrame} 帧，必须跳到起始帧 ${start.frame} 之后`, true);
     return;
   }
-  const endBox = normalizedCurrentBox();
-  if (!endBox) {
-    showToast("annotationToast", "请在结束关键帧重新画出目标位置", true);
+  const visibleBox = normalizedCurrentBox();
+  if (!visibleBox) {
+    showToast("annotationToast", "当前目标框无效，请重新画框", true);
     return;
   }
+  const endBox = state.endKeyframeEdited ? visibleBox : null;
   try {
+    state.trackingBusy = true;
+    updateInterpolationControls();
+    showToast("annotationToast", `正在读取第 ${start.frame}–${endFrame} 帧并跟随目标，请稍候`);
     const result = await request("/api/annotations/interpolate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, start_frame: start.frame, end_frame: endFrame, start_box: start.box, end_box: endBox, start_annotation_id: start.annotationId, label: start.label, region: start.region, frame_step: Number(document.getElementById("interpolationStep").value || 1), track_id: document.getElementById("annotTrack").value || start.trackId, reviewer: "本地标注员" }) });
     showToast("annotationToast", result.message);
     document.getElementById("annotTrack").value = result.track_id;
-    document.getElementById("boxStatus").textContent = `轨迹 ${result.track_id} 已生成：第 ${result.start_frame}–${result.end_frame} 帧，共 ${result.generated} 个框`;
-    state.box = null;
+    const confidence = Math.round(Number(result.quality?.mean_confidence || 0) * 100);
+    document.getElementById("boxStatus").textContent = `轨迹 ${result.track_id} 已自动跟踪：第 ${result.start_frame}–${result.end_frame} 帧，共 ${result.generated} 个框，平均跟踪质量 ${confidence}%`;
     clearInterpolationStart();
+    (result.items || []).forEach(cacheTrackShape);
+    state.box = null;
+    markAnnotationDirty(false);
+    restoreCachedTrackBox(endFrame);
     updateLastSaved();
     await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory(), loadAnnotationTracks()]);
-  } catch (error) { showToast("annotationToast", error.message, true); }
+  } catch (error) {
+    showToast("annotationToast", error.message, true);
+  } finally {
+    state.trackingBusy = false;
+    updateInterpolationControls();
+  }
 });
 
-async function saveAnnotationCheckpoint() {
-  const fps = Number(currentVideoInfo()?.fps || 30);
+function currentAnnotationDraft() {
+  const box = normalizedCurrentBox();
+  if (!box) return null;
+  return {
+    box,
+    label: document.getElementById("annotLabel").value,
+    region: document.getElementById("annotRegion").value,
+    track_id: document.getElementById("annotTrack").value.trim(),
+    color: document.getElementById("annotColor").value,
+    dirty: state.annotationDirty,
+  };
+}
+
+async function loadAnnotationAutosave() {
+  const button = document.getElementById("restoreAnnotationAutosave");
+  if (!button || !state.currentVideoId) return;
   try {
-    const result = await request("/api/annotations/checkpoint", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, current_time: Number(annotVideo.currentTime.toFixed(3)), current_frame: Math.round(Number(annotVideo.currentTime) * fps), operator: "本地标注员" }) });
-    updateLastSaved(result.checkpoint.recorded_at);
-    document.getElementById("annotationDatabaseState").textContent = `SQLite WAL 正常 · 已备份 · ${result.checkpoint.annotation_count} 条`;
-    showToast("annotationToast", result.message);
+    const result = await request(`/api/annotations/autosave?video=${encodeURIComponent(state.currentVideoId)}`);
+    state.latestAutosave = result.snapshot || null;
+    button.disabled = !state.latestAutosave;
+    button.textContent = state.latestAutosave ? `恢复自动缓存 ${state.latestAutosave.recorded_at}` : "暂无自动缓存";
+  } catch (error) {
+    button.disabled = true;
+    button.textContent = `缓存读取失败`;
+  }
+}
+
+function restoreAnnotationAutosave() {
+  const snapshot = state.latestAutosave;
+  if (!snapshot) return;
+  annotVideo.pause();
+  annotVideo.currentTime = Math.max(0, Number(snapshot.current_time || 0));
+  const draft = snapshot.draft;
+  if (draft?.box?.length === 4) {
+    const [x1, y1, x2, y2] = draft.box;
+    state.box = { x: x1 * canvas.width, y: y1 * canvas.height, w: (x2 - x1) * canvas.width, h: (y2 - y1) * canvas.height };
+    document.getElementById("annotLabel").value = draft.label || document.getElementById("annotLabel").value;
+    document.getElementById("annotRegion").value = draft.region || document.getElementById("annotRegion").value;
+    document.getElementById("annotTrack").value = draft.track_id || "";
+    if (/^#[0-9a-f]{6}$/i.test(draft.color || "")) document.getElementById("annotColor").value = draft.color;
+    markAnnotationDirty(Boolean(draft.dirty));
+    document.getElementById("boxStatus").textContent = `已恢复 ${snapshot.recorded_at} 的自动缓存草稿`;
+  }
+  drawBox();
+  showToast("annotationToast", `已恢复自动缓存到第 ${snapshot.current_frame} 帧`);
+}
+
+async function saveAnnotationCheckpoint(options = {}) {
+  if (state.annotationAutosaveBusy || !state.currentVideoId) return;
+  const fps = Number(currentVideoInfo()?.fps || 30);
+  const wasDirty = state.annotationDirty;
+  state.annotationAutosaveBusy = true;
+  try {
+    const result = await request("/api/annotations/checkpoint", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, current_time: Number(annotVideo.currentTime.toFixed(3)), current_frame: Math.round(Number(annotVideo.currentTime) * fps), operator: state.user?.username || "本地标注员", draft: currentAnnotationDraft(), automatic: Boolean(options.automatic) }) });
+    if (options.automatic) {
+      document.getElementById("annotationLastSaved").textContent = `自动缓存：${result.checkpoint.recorded_at} · 数据库 + 视频`;
+      markAnnotationDirty(wasDirty);
+    } else {
+      updateLastSaved(result.checkpoint.recorded_at);
+    }
+    const cacheMode = result.checkpoint.video_cache?.mode === "hardlink" ? "视频硬链接缓存" : "视频引用缓存";
+    document.getElementById("annotationDatabaseState").textContent = `SQLite WAL 正常 · 已备份 · ${result.checkpoint.annotation_count} 条 · ${cacheMode}`;
+    if (!options.silent) showToast("annotationToast", result.message);
+    state.latestAutosave = result.checkpoint.autosave;
+    const restore = document.getElementById("restoreAnnotationAutosave");
+    if (restore) { restore.disabled = false; restore.textContent = `恢复自动缓存 ${result.checkpoint.recorded_at}`; }
     await loadAnnotationHistory();
-  } catch (error) { showToast("annotationToast", error.message, true); }
+  } catch (error) {
+    document.getElementById("annotationDatabaseState").textContent = `自动缓存失败：${error.message}`;
+    if (!options.silent) showToast("annotationToast", error.message, true);
+  } finally {
+    state.annotationAutosaveBusy = false;
+  }
 }
 
 document.getElementById("saveAnnotationProgress").addEventListener("click", saveAnnotationCheckpoint);
 document.getElementById("saveProgressToolbar").addEventListener("click", saveAnnotationCheckpoint);
+document.getElementById("restoreAnnotationAutosave").addEventListener("click", restoreAnnotationAutosave);
 document.getElementById("refreshAnnotationHistory").addEventListener("click", loadAnnotationHistory);
 document.getElementById("refreshTracks").addEventListener("click", loadAnnotationTracks);
+document.getElementById("exitCheckpointPreview").addEventListener("click", () => exitCheckpointPreview(true));
+document.getElementById("restoreCheckpointDraft").addEventListener("click", restoreCheckpointDraft);
+document.getElementById("annotationHistoryRows").addEventListener("click", event => {
+  const button = event.target.closest("[data-view-checkpoint]");
+  if (button) viewAnnotationCheckpoint(button.dataset.viewCheckpoint);
+});
+document.getElementById("startAiPrelabel").addEventListener("click", () => controlAiPrelabel("resume"));
+document.getElementById("pauseAiPrelabel").addEventListener("click", () => controlAiPrelabel("pause"));
+document.getElementById("refreshAiPrelabel").addEventListener("click", loadAiPrelabelStatus);
 
 document.getElementById("trackRows").addEventListener("click", async event => {
   const openButton = event.target.closest("[data-open-track]");
   if (openButton) {
     document.getElementById("annotTrack").value = openButton.dataset.openTrack;
     seekToFrame(Number(openButton.dataset.trackFrame));
+    return;
+  }
+  const segmentButton = event.target.closest("[data-delete-track-segment]");
+  if (segmentButton) {
+    const trackId = segmentButton.dataset.deleteTrackSegment;
+    const startFrame = Number(document.querySelector(`[data-segment-start="${CSS.escape(trackId)}"]`)?.value);
+    const endFrame = Number(document.querySelector(`[data-segment-end="${CSS.escape(trackId)}"]`)?.value);
+    if (!Number.isInteger(startFrame) || !Number.isInteger(endFrame) || endFrame < startFrame) {
+      showToast("annotationToast", "请填写有效的轨迹起止帧", true);
+      return;
+    }
+    if (!window.confirm(`确定删除轨迹 ${trackId} 的第 ${startFrame}–${endFrame} 帧？区间外的轨迹框会保留。`)) return;
+    try {
+      const result = await request("/api/annotations/tracks/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId, track_id: trackId, start_frame: startFrame, end_frame: endFrame }) });
+      state.box = null;
+      state.loadedAnnotation = null;
+      showToast("annotationToast", result.message);
+      await Promise.all([loadAnnotations(), loadAnnotationStats(), loadAnnotationHistory(), loadAnnotationTracks()]);
+    } catch (error) { showToast("annotationToast", error.message, true); }
     return;
   }
   const deleteButton = event.target.closest("[data-delete-track]");
@@ -899,8 +1412,16 @@ document.getElementById("saveAnnotationScope").addEventListener("click", async (
   const materialA = document.getElementById("scopeMaterialA").value.trim();
   const materialB = document.getElementById("scopeMaterialB").value.trim();
   const requiredLabels = ["PCB板", "操作人员手部", "物料框", distinguish ? `手持${materialA}` : "手持插件", distinguish ? `手持${materialB}` : "插件位置", "插件位置"].filter((item, index, list) => item && list.indexOf(item) === index);
+  const stationType = document.getElementById("scopeStationType").value;
+  const stationTemplates = {
+    test: ["步骤顺序", "手势与操作模式", "电脑显示的测试内容是否一致", "测试完成状态"],
+    programming: ["步骤顺序", "插电动作", "烧录内容与状态", "拔线与完成确认"],
+    assembly: ["步骤顺序", "装配内容", "标签信息", "手势与操作模式"],
+    fastening: ["步骤顺序", "螺丝是否存在", "螺丝点位", "是否执行紧固动作"],
+  };
+  const verificationPoints = stationTemplates[stationType] || stationTemplates.assembly;
   try {
-    const result = await request("/api/annotations/scope", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ station_name: document.getElementById("scopeStationName").value, quality_goal: document.getElementById("scopeQualityGoal").value, material_a: materialA, material_b: materialB, distinguish_materials: distinguish, required_labels: requiredLabels, excluded_labels: ["逐个电容", "逐个电阻", "与本工位质量目标无关的元件"], policy: distinguish ? "只标注能判断本工位取料、插装位置和工序正确性的目标。两种插件会影响工艺判定，需要分类。" : "只标注能判断本工位取料、插装位置和工序正确性的目标。两种插件不影响工艺判定，统一标为手持插件。" }) });
+    const result = await request("/api/annotations/scope", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ station_name: document.getElementById("scopeStationName").value, station_type: stationType, quality_goal: document.getElementById("scopeQualityGoal").value, material_a: materialA, material_b: materialB, distinguish_materials: distinguish, required_labels: requiredLabels, verification_points: verificationPoints, excluded_labels: ["板内器件型号/极性是否正确（当前阶段）", "与本工位流程判断无关的元件"], policy: `当前先核对流程是否符合及手势是否正确：${verificationPoints.join("、")}。板内器件是否正确留到后续器件级模型和人工冻结真值阶段。` }) });
     showToast("annotationToast", result.message);
     await loadAnnotationScope();
   } catch (error) { showToast("annotationToast", error.message, true); }
@@ -912,9 +1433,14 @@ document.getElementById("saveAnnotationScope").addEventListener("click", async (
 
 window.setInterval(() => {
   if (!document.getElementById("view-annotation")?.classList.contains("active")) return;
-  const message = state.annotationDirty ? "一分钟保存提醒：当前区域有修改，请点击“保存当前区域”或“保存全部进度”" : "一分钟保存提醒：当前标注均已保存，可继续标注下一关键帧";
-  showToast("annotationToast", message, false);
+  saveAnnotationCheckpoint({ automatic: true, silent: true });
 }, 60000);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && document.getElementById("view-annotation")?.classList.contains("active")) {
+    saveAnnotationCheckpoint({ automatic: true, silent: true });
+  }
+});
 
 window.addEventListener("beforeunload", event => {
   if (!state.annotationDirty) return;
@@ -1136,6 +1662,7 @@ async function loadCvatIntegration() {
     const integration = await request("/api/integrations");
     const cvat = integration.cvat;
     document.getElementById("openCvat").href = cvat.tasks_url;
+    document.querySelectorAll("[data-cvat-route]").forEach(link => { link.href = `${String(cvat.url).replace(/\/$/, "")}${link.dataset.cvatRoute}`; });
     document.getElementById("labelStudioLink").href = cvat.tasks_url;
     document.getElementById("labelStudioVideoLink").href = cvat.tasks_url;
     document.getElementById("cvatStatus").textContent = cvat.available ? "CVAT 在线" : `CVAT 未连接 · ${cvat.url}`;
@@ -1152,6 +1679,9 @@ async function loadCvatTasks() {
   try {
     const result = await request("/api/cvat/tasks");
     const tasks = result.items || [];
+    const writableTask = tasks.find(item => item.cvat_task_id != null && item.mode === "api") || tasks.find(item => item.cvat_task_id != null);
+    if (!state.latestCvatTaskId && writableTask) state.latestCvatTaskId = Number(writableTask.cvat_task_id);
+    document.getElementById("pushAnnotationsToCvat").disabled = !state.latestCvatTaskId;
     const bulk = result.bulk || {};
     const counts = bulk.counts || {};
     const project = bulk.project || {};
@@ -1168,12 +1698,130 @@ document.getElementById("createCvatTask").addEventListener("click", async () => 
   try {
     const result = await request("/api/cvat/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: document.getElementById("cvatTaskName").value, dataset_id: datasetId, line_id: state.activeLineId, labels, video_id: state.currentVideoId, upload_video: true }) });
     document.getElementById("cvatMessage").textContent = `${result.message}：${result.url}`;
+    if (result.task?.cvat_task_id != null) state.latestCvatTaskId = Number(result.task.cvat_task_id);
     await loadCvatTasks();
     window.open(result.url, "_blank", "noopener,noreferrer");
   } catch (error) { document.getElementById("cvatMessage").textContent = error.message; }
 });
 
 document.getElementById("refreshCvatTasks").addEventListener("click", loadCvatTasks);
+document.getElementById("pushAnnotationsToCvat").addEventListener("click", async () => {
+  const taskId = state.latestCvatTaskId;
+  if (!taskId) return;
+  if (!window.confirm(`将用平台当前视频的已保存框替换 CVAT 任务 #${taskId} 的标注内容，是否继续？`)) return;
+  const button = document.getElementById("pushAnnotationsToCvat");
+  button.disabled = true;
+  button.textContent = "正在保存到 CVAT…";
+  try {
+    const result = await request("/api/cvat/annotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task_id: taskId, video_id: state.currentVideoId }) });
+    document.getElementById("cvatMessage").textContent = `${result.message}；${result.skipped} 个框因标签未配置或状态无效而跳过。`;
+    showToast("annotationToast", result.message);
+  } catch (error) {
+    document.getElementById("cvatMessage").textContent = `CVAT 标注同步失败：${error.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "保存到最近 CVAT 任务";
+  }
+});
+
+function renderCloudStatus(status) {
+  const google = status.google || {};
+  const baidu = status.baidu || {};
+  const local = status.local || {};
+  const latestJob = (status.jobs || [])[0];
+  const parts = [
+    `Google 拉取：${google.source_configured ? "已授权" : "待 OAuth/rclone"}`,
+    `Google 回传：${google.output_configured ? "已授权" : "待 OAuth/rclone"}`,
+    `百度拉取：${baidu.configured ? "已授权" : "待同步器授权"}`,
+    `百度回传：${baidu.upload_configured ? "已授权" : "待上传器授权"}`,
+    `本地缓存：${Number(local.cached_files || 0)} 个文件`,
+  ];
+  document.getElementById("cloudSyncStatus").textContent = latestJob ? `${latestJob.status} · ${latestJob.message}` : parts.join(" · ");
+  document.getElementById("cloudSyncDetail").textContent = `${status.security || ""}${local.latest_export ? ` 最近成片：${local.latest_export.split("/").at(-1)}` : ""}`;
+  const googleLink = document.getElementById("openGoogleSource");
+  const baiduLink = document.getElementById("openBaiduSource");
+  googleLink.href = google.source_url || "#";
+  googleLink.setAttribute("aria-disabled", google.source_url ? "false" : "true");
+  baiduLink.href = baidu.source_url || "#";
+  baiduLink.setAttribute("aria-disabled", baidu.source_url ? "false" : "true");
+  document.getElementById("pullGoogleVideos").disabled = !google.source_configured;
+  document.getElementById("pushGoogleAnnotations").disabled = !google.output_configured;
+  document.getElementById("pullBaiduVideos").disabled = !baidu.configured;
+  document.getElementById("pushBaiduAnnotations").disabled = !baidu.upload_configured;
+}
+
+for (const linkId of ["openGoogleSource", "openBaiduSource"]) {
+  document.getElementById(linkId).addEventListener("click", event => {
+    if (event.currentTarget.getAttribute("aria-disabled") === "true") event.preventDefault();
+  });
+}
+
+async function loadCloudStatus() {
+  try {
+    renderCloudStatus(await request("/api/cloud/status"));
+  } catch (error) {
+    document.getElementById("cloudSyncStatus").textContent = `网盘状态读取失败：${error.message}`;
+  }
+}
+
+async function refreshVideoCatalogAfterCloudSync() {
+  const catalog = await request("/api/videos");
+  state.catalog = catalog;
+  const selected = state.currentVideoId;
+  document.getElementById("annotVideoSelect").innerHTML = catalog.videos.map((item, index) => `<option value="${escapeHtml(item.id)}">视频${index + 1} · ${escapeHtml(item.source_video.split("/").at(-1))}</option>`).join("");
+  document.getElementById("annotVideoSelect").value = catalog.videos.some(item => item.id === selected) ? selected : catalog.videos[0]?.id;
+  renderVideoSwitcher();
+}
+
+async function startCloudSync(action) {
+  const labels = { pull_google: "Google Drive 拉取", pull_baidu: "百度网盘拉取", push_google: "Google Drive 回传", push_baidu: "百度网盘回传" };
+  try {
+    const result = await request("/api/cloud/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    document.getElementById("cloudSyncStatus").textContent = `${labels[action]}：${result.message}`;
+    window.clearInterval(state.cloudJobTimer);
+    state.cloudJobTimer = window.setInterval(async () => {
+      const status = await request("/api/cloud/status").catch(() => null);
+      if (!status) return;
+      renderCloudStatus(status);
+      const job = (status.jobs || []).find(item => item.job_id === result.job.job_id);
+      if (job && ["completed", "failed"].includes(job.status)) {
+        window.clearInterval(state.cloudJobTimer);
+        state.cloudJobTimer = null;
+        if (job.status === "completed" && action.startsWith("pull_")) await refreshVideoCatalogAfterCloudSync();
+      }
+    }, 2000);
+  } catch (error) {
+    document.getElementById("cloudSyncStatus").textContent = `${labels[action]}失败：${error.message}`;
+  }
+}
+
+async function renderCurrentAnnotationVideo() {
+  try {
+    const result = await request("/api/annotations/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ video_id: state.currentVideoId }) });
+    document.getElementById("cloudSyncStatus").textContent = result.message;
+    window.clearInterval(state.renderJobTimer);
+    state.renderJobTimer = window.setInterval(async () => {
+      const status = await request(`/api/annotations/render/status?job=${encodeURIComponent(result.job.job_id)}`).catch(() => null);
+      if (!status) return;
+      const job = status.job;
+      document.getElementById("cloudSyncStatus").textContent = `${job.message} · ${Number(job.progress || 0).toFixed(1)}%`;
+      if (["completed", "failed"].includes(job.status)) {
+        window.clearInterval(state.renderJobTimer);
+        state.renderJobTimer = null;
+        await loadCloudStatus();
+      }
+    }, 1800);
+  } catch (error) {
+    document.getElementById("cloudSyncStatus").textContent = `标注成片生成失败：${error.message}`;
+  }
+}
+
+document.getElementById("refreshCloudStatus").addEventListener("click", loadCloudStatus);
+document.getElementById("pullGoogleVideos").addEventListener("click", () => startCloudSync("pull_google"));
+document.getElementById("pullBaiduVideos").addEventListener("click", () => startCloudSync("pull_baidu"));
+document.getElementById("pushGoogleAnnotations").addEventListener("click", () => startCloudSync("push_google"));
+document.getElementById("pushBaiduAnnotations").addEventListener("click", () => startCloudSync("push_baidu"));
+document.getElementById("renderAnnotationVideo").addEventListener("click", renderCurrentAnnotationVideo);
 
 document.getElementById("deployModel").addEventListener("click", async () => {
   try {
@@ -1385,6 +2033,12 @@ function renderCameraWall(cameras) {
   wall.innerHTML = state.connectedCameras.length ? state.connectedCameras.map(item => `<article class="camera-tile" data-wall-camera="${escapeHtml(item.camera_id)}"><img alt="${escapeHtml(item.camera_name || `摄像头${item.camera_id}`)}实时视频流"><footer><span>${escapeHtml(item.camera_name || `摄像头${item.camera_id}`)}</span><span class="camera-tile-state">待启动 · ${escapeHtml(item.source || "未绑定")}</span></footer></article>`).join("") : `<span class="device-empty">未发现可用的视频采集设备</span>`;
 }
 
+function renderCameraRecommendations(items) {
+  const element = document.getElementById("cameraRecommendationRows");
+  if (!element) return;
+  element.innerHTML = items?.length ? items.map(item => `<article><div><b>${escapeHtml(item.priority)}</b><span>${escapeHtml(item.solution)}</span></div><h3>${escapeHtml(item.models)}</h3><dl><dt>传输</dt><dd>${escapeHtml(item.transport)}</dd><dt>预算</dt><dd>${escapeHtml(item.budget_cny)}</dd><dt>延迟</dt><dd>${escapeHtml(item.latency)}</dd><dt>适用</dt><dd>${escapeHtml(item.fit)}</dd></dl><p>${escapeHtml(item.decision)}</p></article>`).join("") : '<span class="device-empty">暂无采购建议</span>';
+}
+
 async function startCameraWall() {
   if (!state.connectedCameras.length) await loadDeviceInventory();
   await request("/api/camera/start?camera=all", { method: "POST" }).catch(() => null);
@@ -1411,7 +2065,10 @@ async function stopCameraWall() {
 
 async function loadDeviceInventory() {
   try {
-    const inventory = await request("/api/device/inventory");
+    const [inventory, recommendations] = await Promise.all([
+      request("/api/device/inventory"),
+      request("/api/camera/recommendations"),
+    ]);
     document.getElementById("deviceNetworkNote").textContent = `${inventory.camera_network_note} 影石状态：${inventory.insta360?.message || "未读取"}`;
     renderCameraOptions(inventory.camera_sources || []);
     renderCameraWall(inventory.camera_sources || []);
@@ -1419,6 +2076,7 @@ async function loadDeviceInventory() {
     renderDeviceList("serialDeviceRows", inventory.serials, "未发现串口设备");
     renderDeviceList("networkDeviceRows", inventory.network, "未发现网络接口");
     renderCameraCapabilities(inventory.videos);
+    renderCameraRecommendations(recommendations.items || []);
   } catch (error) { document.getElementById("deviceNetworkNote").textContent = `设备信息读取失败：${error.message}`; }
 }
 

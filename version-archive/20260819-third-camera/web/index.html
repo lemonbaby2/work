@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="面向汽车零部件车间的SOP自建、标注、训练、部署和MES追溯平台演示">
+  <title>宁波零部件 SOP 分析平台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">S</div>
+      <div><strong>宁波零部件 SOP 分析平台</strong><span>从录像到放行，一套平台闭环</span></div>
+    </div>
+    <div class="top-status"><span class="pulse"></span>演示工位在线 <b>NB-IP-SOP-01</b></div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <nav>
+        <button class="nav-item active" data-view="overview"><span>01</span>老板总览</button>
+        <button class="nav-item" data-view="monitor"><span>02</span>现场监控</button>
+        <button class="nav-item" data-view="decision"><span>03</span>智能决策中心</button>
+        <button class="nav-item" data-view="studio"><span>04</span>SOP 编排</button>
+        <button class="nav-item" data-view="annotation"><span>05</span>数据标注</button>
+        <button class="nav-item" data-view="training"><span>06</span>训练与部署</button>
+        <button class="nav-item" data-view="mes"><span>07</span>MES 对接</button>
+        <button class="nav-item" data-view="roadmap"><span>08</span>建设方案</button>
+        <button class="nav-item" data-view="quality"><span>09</span>标注与模型对比</button>
+      </nav>
+      <div class="side-note"><b>这套平台解决什么？</b><p>让工艺人员自己定义“先做什么、后做什么”，系统自动看、自动提醒、自动留证。</p></div>
+    </aside>
+
+    <main class="content">
+      <section class="view active" id="view-overview">
+        <div class="page-head"><div><span class="eyebrow">MANAGEMENT OVERVIEW</span><h1>老板总览</h1><p>一句话看懂：现场有没有按标准做，哪里出了问题，能不能放行。</p></div><button class="primary" data-jump="monitor">播放真实视频验证</button></div>
+        <div class="notice"><strong>当前演示边界</strong><span>视觉顺序已经跑通；由于测试视频没有电动工具扭矩报文和MES回执，生产放行保持“待确认”，不会伪造合格结论。</span></div>
+        <div class="kpi-grid">
+          <article class="kpi"><span>真实视频</span><strong id="kpiVideos">5 段</strong><small id="kpiDuration">累计505.43秒</small></article>
+          <article class="kpi"><span>逐帧留证</span><strong id="kpiFrames">15,163 帧</strong><small>每帧均有零件和步骤标签</small></article>
+          <article class="kpi"><span>SOP步骤</span><strong id="kpiSteps">30 步</strong><small>五段视频各6步</small></article>
+          <article class="kpi warning-kpi"><span>最终放行</span><strong>待确认</strong><small>需扭矩数据 + MES应答</small></article>
+        </div>
+
+        <div class="two-col overview-grid">
+          <article class="card flow-card">
+            <div class="card-title"><div><span class="eyebrow">HOW IT WORKS</span><h2>现场怎么工作</h2></div><span class="badge green">人人看得懂</span></div>
+            <div class="flow">
+              <div><b>1</b><strong>相机录像</strong><span>固定拍摄装配区域</span></div><i>→</i>
+              <div><b>2</b><strong>AI看零件</strong><span>识别手、工具和部件</span></div><i>→</i>
+              <div><b>3</b><strong>核对顺序</strong><span>漏装、错序立即提醒</span></div><i>→</i>
+              <div><b>4</b><strong>上传MES</strong><span>工单、结果、证据留档</span></div>
+            </div>
+          </article>
+          <article class="card capacity-card">
+            <div class="card-title"><div><span class="eyebrow">CAPACITY</span><h2>一台工控机带几路？</h2></div></div>
+            <div class="capacity-number"><strong>2 路</strong><span>建议按此数量验收</span></div>
+            <p>RTX 4060 工控机按闭集YOLO26/YOLOv8、每路10–15帧/秒先配置2路1080P相机。完成现场压力测试和TensorRT、DeepStream多路批处理后，再评估扩展到4路。</p>
+          </article>
+        </div>
+
+        <article class="card">
+          <div class="card-title"><div><span class="eyebrow">SELF-SERVICE LOOP</span><h2>以后新增岗位，公司自己完成</h2></div><span class="badge">不改主程序</span></div>
+          <div class="loop-grid">
+            <div><b>① 录一段标准操作</b><p>工艺员上传“正确做法”视频，自动按时间抽帧。</p></div>
+            <div><b>② 在网页框选零件</b><p>选择零件名称，拖框标注，质量人员抽检。</p></div>
+            <div><b>③ 点击训练</b><p>平台调用GPU训练，自动比较新旧模型。</p></div>
+            <div><b>④ 编排SOP顺序</b><p>拖动步骤、设置等待时间和错误处理。</p></div>
+            <div><b>⑤ 灰度下发</b><p>先下发一个工位观察，确认后批量推广。</p></div>
+            <div><b>⑥ 持续改进</b><p>把误报漏报帧回收到标注池，越用越准。</p></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="view" id="view-monitor">
+        <div class="page-head monitor-head"><div><span class="eyebrow">LIVE REVIEW</span><h1>五视频现场监控与逐帧复核</h1><p>五段真实视频均可切换；新增两段使用YOLOE-26S实例分割与重叠切片，小目标候选进入人工复核。</p></div><span class="badge green">5段视频已跑通</span></div>
+        <div class="video-switcher" id="videoSwitcher"></div>
+        <div class="monitor-grid">
+          <article class="video-card">
+            <video id="sopVideo" controls preload="metadata" src="media/仪表板SOP_YOLOv8逐帧识别演示.mp4"></video>
+            <div class="video-meta"><span id="videoAlgorithm">YOLOE-26S / YOLOv8</span><span id="videoResolution">1620×720</span><span>30 FPS</span><span>H.264</span></div>
+          </article>
+          <aside class="step-panel">
+            <div class="live-head"><span class="pulse"></span><div><b id="liveStepTitle">S01 确认仪表板骨架到位</b><small id="liveStepTime">00:00 / 01:17</small></div></div>
+            <div class="progress"><i id="videoProgress"></i></div>
+            <ol id="liveSteps" class="step-list"></ol>
+            <div class="release-box"><span>生产放行</span><b>HOLD 待确认</b><small>还缺PSet、扭矩、角度和MES回执</small></div>
+          </aside>
+        </div>
+        <div class="evidence-grid" id="evidenceGrid"></div>
+        <article class="card live-camera-card">
+          <div class="card-title">
+            <div><span class="eyebrow">LIVE CAMERA / YOLOV11</span><h2>实时相机目标检测</h2></div>
+            <span class="badge" id="cameraBadge">未启动</span>
+          </div>
+          <div class="live-camera-layout">
+            <div class="live-camera-frame">
+              <img id="liveCameraFeed" alt="YOLOv11实时摄像头检测画面">
+              <div class="live-camera-placeholder" id="liveCameraPlaceholder">点击“启动实时检测”打开摄像头</div>
+            </div>
+            <aside class="live-camera-side">
+              <div class="camera-model"><b>YOLOv11n</b><span>GPU 推理 · CUDA 0</span></div>
+              <label class="camera-select-label">显示相机<select id="cameraSelect"><option value="0">USB Composite · 1280×720</option><option value="1">Orbbec webcam · 2560×1440</option><option value="2">网络摄像头3 · 192.168.1.135</option></select></label>
+              <dl class="camera-metrics">
+                <div><dt>相机</dt><dd id="cameraSource">/dev/video0</dd></div>
+                <div><dt>画面</dt><dd id="cameraResolution">--</dd></div>
+                <div><dt>FPS</dt><dd id="cameraFps">--</dd></div>
+                <div><dt>推理</dt><dd id="cameraLatency">--</dd></div>
+                <div><dt>当前目标</dt><dd id="cameraDetections">--</dd></div>
+                <div><dt>保存位置</dt><dd id="cameraOutput">桌面/sop xjai</dd></div>
+              </dl>
+              <div class="camera-actions"><button class="primary" id="startLiveCamera">启动实时检测</button><button class="ghost" id="stopLiveCamera">停止检测</button><button class="ghost" id="snapshotLiveCamera">保存截图</button><button class="ghost" id="recordLiveCamera">开始录制</button></div>
+              <p class="camera-note" id="cameraMessage">检测画面只用于现场验证，不直接替代 MES 放行。</p>
+            </aside>
+          </div>
+        </article>
+        <article class="card device-card">
+          <div class="card-title"><div><span class="eyebrow">USB / NETWORK IDENTITY</span><h2>摄像头身份、串口和主机网络</h2></div><button class="ghost" id="refreshDevices">刷新设备</button></div>
+          <div class="device-notice" id="deviceNetworkNote">正在读取设备信息…</div>
+          <div class="device-grid"><div><h3>USB 视频设备</h3><div id="videoDeviceRows" class="device-list">读取中…</div></div><div><h3>串口控制通道</h3><div id="serialDeviceRows" class="device-list">读取中…</div></div><div><h3>采集主机网络</h3><div id="networkDeviceRows" class="device-list">读取中…</div></div></div>
+          <div class="network-camera-bind">
+            <div class="card-title"><div><h3>网络摄像头 3 绑定</h3><p class="bind-help">MAC 用于身份校验，IP 用于访问；固定 IP 请在路由器中建立 DHCP 静态租约。</p></div><span class="badge" id="networkCameraBindStatus">读取中</span></div>
+            <div class="bind-grid">
+              <label>设备名称<input id="networkCameraName" value="网络摄像头3 · 镭威视电池智链摄像机"></label>
+              <label>固定 IP<input id="networkCameraIp" value="192.168.1.135" inputmode="decimal"></label>
+              <label>MAC 地址<input id="networkCameraMac" value="c4:3c:b0:be:40:e8"></label>
+              <label>网关<input id="networkCameraGateway" value="192.168.1.1"></label>
+              <label>子网掩码<input id="networkCameraNetmask" value="255.255.255.0"></label>
+              <label>DNS<input id="networkCameraDns" value="192.168.1.1"></label>
+              <label class="bind-wide">RTSP 地址<input id="networkCameraRtsp" value="rtsp://192.168.1.135:554/" placeholder="rtsp://用户名:密码@192.168.1.135:554/实际路径"></label>
+            </div>
+            <div class="bind-actions"><button class="ghost" id="testNetworkCamera">测试 RTSP</button><button class="primary" id="saveNetworkCamera">保存绑定</button><span id="networkCameraMessage">当前设备身份已核实，RTSP 路径待确认。</span></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="view" id="view-decision">
+        <div class="page-head"><div><span class="eyebrow">EXPLAINABLE DECISION TERMINAL</span><h1>SOP 智能分析决策中心</h1><p>把检测结果变成现场可执行决定：现在做到哪一步、风险在哪里、为什么拦截、下一步怎么处理。</p></div><span class="badge green">SOP-Decision-2026.08</span></div>
+        <div class="decision-hero">
+          <article class="decision-status"><span>当前决策</span><strong id="decisionRelease">HOLD</strong><p id="decisionAction">等待视频播放后生成建议</p></article>
+          <article class="risk-card"><div class="risk-ring" id="riskRing"><b id="riskScore">62</b><span>风险分</span></div><div><span>风险等级</span><strong id="riskLevel">中</strong><small>缺扭矩或MES证据时，不允许自动放行</small></div></article>
+          <article class="evidence-card"><span>当前证据强度</span><strong id="evidenceScore">0%</strong><div class="meter"><i id="evidenceMeter"></i></div><small>综合检测置信度、持续时间和规则一致性</small></article>
+        </div>
+        <div class="decision-grid">
+          <article class="card"><div class="card-title"><h2>决策链路</h2><span class="badge">逐层设门</span></div><div class="decision-chain" id="decisionChain"></div><p class="footnote">大模型或智能助手可以解释和建议，但无权绕过确定性放行规则。</p></article>
+          <article class="card"><div class="card-title"><h2>为什么这样判断</h2><span class="badge green" id="decisionStep">等待数据</span></div><ul class="reason-list" id="decisionReasons"><li>播放现场视频后自动更新。</li></ul></article>
+          <article class="card"><div class="card-title"><h2>当前识别到什么</h2><span class="badge" id="decisionTime">00.0秒</span></div><div class="object-counts"><div><b id="countRegions">0</b><span>零件区域</span></div><div><b id="countDynamic">0</b><span>手/工具</span></div><div><b id="countFastener">0</b><span>紧固点候选</span></div></div><p class="truth-notice" id="truthNotice">紧固点候选必须人工复核。</p></article>
+        </div>
+        <article class="card review-card"><div><h2>人机协同处置</h2><p>系统给出证据、风险和建议；工艺/质量人员确认候选框、异常原因和是否允许返工。</p></div><div class="review-actions"><button class="ghost decision-review" data-result="误报">标记误报</button><button class="ghost decision-review" data-result="需要返工">需要返工</button><button class="primary decision-review" data-result="人工确认">人工确认并留痕</button></div></article>
+        <div class="toast" id="decisionToast"></div>
+      </section>
+
+      <section class="view" id="view-studio">
+        <div class="page-head"><div><span class="eyebrow">SOP STUDIO</span><h1>SOP 编排工作台</h1><p>工艺人员调整步骤顺序、名称和时间，保存后自动形成新版本。</p></div><button class="primary" id="saveRecipe">保存为新版本</button></div>
+        <div class="studio-layout">
+          <article class="card"><div class="card-title"><h2>仪表板装配 V1</h2><span class="badge green">草案</span></div><div id="stepEditor" class="step-editor"></div><button class="ghost" id="addStep">＋ 添加步骤</button></article>
+          <aside class="card guard-card"><h2>放行条件</h2><label><input type="checkbox" checked> 所有视觉步骤按序完成</label><label><input type="checkbox" checked> 拧紧控制器扭矩合格</label><label><input type="checkbox" checked> MES返回接收成功</label><hr><h2>异常怎么办</h2><p><b>错序：</b>屏幕红色提示并语音提醒，不进入下一步。</p><p><b>漏装：</b>工位保持锁定，班组长确认后处理。</p><p><b>断网：</b>本机缓存事件，网络恢复后补传MES。</p></aside>
+        </div>
+        <div class="toast" id="studioToast"></div>
+      </section>
+
+      <section class="view" id="view-annotation">
+        <div class="page-head"><div><span class="eyebrow">ANNOTATION</span><h1>公司自己的标注工作台</h1><p>读取现有预标注和小目标候选，人工修框、确认或驳回后形成可追溯真值。</p></div><button class="primary" id="saveAnnotation">保存当前标注</button></div>
+        <div class="annotation-controls card">
+          <label>视频<select id="annotVideoSelect"></select></label>
+          <div class="frame-controls"><button class="ghost icon-button" id="prevFrame" title="上一帧" aria-label="上一帧">←</button><button class="ghost icon-button" id="nextFrame" title="下一帧" aria-label="下一帧">→</button></div>
+          <label>数据来源<select id="annotSourceFilter"><option value="all">当前帧 + 人工标注</option><option value="prelabel">检测预标注</option><option value="candidate">小目标候选</option><option value="manual">人工标注</option></select></label>
+          <label>审核状态<select id="annotStatusFilter"><option value="all">全部状态</option><option value="pending">待复核</option><option value="human_confirmed">人工确认</option><option value="needs_correction">需要修正</option><option value="rejected">已驳回</option></select></label>
+          <button class="ghost" id="refreshAnnotations">刷新数据</button>
+        </div>
+        <div class="annotation-layout">
+          <article class="annot-stage"><div class="canvas-wrap"><video id="annotVideo" controls preload="metadata" src="media/原始测试视频_de02.mp4"></video><canvas id="annotCanvas"></canvas></div><div class="annot-toolbar"><label>标签<select id="annotLabel"><option>前除霜风道组件</option><option>中央风道/模块</option><option>线束接插件</option><option>操作人员手部</option><option>电动紧固工具</option><option>紧固孔候选</option><option>塑料卡扣候选</option><option>螺钉点位</option><option>异常零件</option></select></label><label>框颜色<input id="annotColor" type="color" value="#39e2bc" title="人工标注框颜色"></label><button class="ghost" id="clearBox">清除框</button><span id="boxStatus">请在视频上拖动鼠标框选</span><b id="annotFrameTime">00:00.000</b></div></article>
+          <aside class="card annotation-side"><h2>五视频标注池</h2><div class="mini-kpis"><div><b id="prelabelCount">--</b><span>检测预标注</span></div><div><b id="candidateCount">--</b><span>小目标候选</span></div><div><b id="manualCount">--</b><span>人工标注</span></div></div><h3>数据进入训练集前</h3><ol><li>载入候选框并收紧边界，确认标签名称</li><li>质量员逐项确认、驳回或退回修正</li><li>只导出人工确认且抽检通过的版本</li></ol><div class="tip" id="annotationTruth">预标注和小目标候选仅用于提高人工标注效率，人工确认前不属于生产真值。</div></aside>
+        </div>
+        <article class="card annotation-queue"><div class="card-title"><div><span class="eyebrow">REVIEW QUEUE</span><h2>当前帧候选与已保存标注</h2></div><div class="queue-actions"><a class="ghost" href="/api/annotations/export?status=human_confirmed" target="_blank">导出已确认 JSON</a><span class="badge" id="annotationResultCount">加载中</span></div></div><div class="annotation-table-wrap"><table class="annotation-table"><thead><tr><th>时间/帧</th><th>标签</th><th>来源</th><th>置信度</th><th>状态</th><th>操作</th></tr></thead><tbody id="annotationRows"><tr><td colspan="6">正在读取标注数据…</td></tr></tbody></table></div></article>
+        <div class="toast" id="annotationToast"></div>
+      </section>
+
+      <section class="view" id="view-training">
+        <div class="page-head"><div><span class="eyebrow">MODEL FACTORY</span><h1>训练、验收与下发</h1><p>平台帮工艺和质量人员把复杂算法变成“选数据、点训练、看结果、批准下发”。</p></div></div>
+        <div class="train-pipeline">
+          <article class="card action-card"><span>01</span><h2>数据集</h2><strong>五视频细粒度预标注</strong><p>共1,013张抽帧；新增两视频544张、12类，全部待人工复核</p><button class="ghost">查看数据</button></article>
+          <article class="card action-card"><span>02</span><h2>GPU训练</h2><strong>YOLO26N 小目标学生模型</strong><p>RTX 4060完成12轮蒸馏训练；需人工真值再验收</p><button class="primary" id="startTraining">登记复核后训练</button></article>
+          <article class="card action-card"><span>03</span><h2>业务验收</h2><strong>不只看mAP</strong><p>重点看漏装拦截率、错序拦截率、误报率</p><button class="ghost">查看验收门槛</button></article>
+          <article class="card action-card"><span>04</span><h2>灰度下发</h2><strong>先1个工位</strong><p>可回滚，确认稳定后再批量下发</p><button class="primary" id="deployModel">生成灰度下发单</button></article>
+        </div>
+        <article class="card acceptance"><div class="card-title"><h2>建议验收指标</h2><span class="badge">由质量部门最终确认</span></div><div class="accept-grid"><div><b>≥ 98%</b><span>关键漏装拦截率</span></div><div><b>≥ 99%</b><span>错序拦截率</span></div><div><b>≤ 2%</b><span>每百件误报率</span></div><div><b>≤ 300ms</b><span>现场反馈延迟</span></div></div><p class="footnote">当前视频仅验证系统流程，不具备正式量产精度统计条件；量产指标必须使用现场冻结测试集测得。</p></article>
+        <div class="toast" id="trainingToast"></div>
+      </section>
+
+      <section class="view" id="view-mes">
+        <div class="page-head"><div><span class="eyebrow">MES CONNECTOR</span><h1>MES 对接与追溯</h1><p>每件产品形成一条可查询记录：谁、何时、在哪个工位、做了哪些步骤、结果如何、证据在哪。</p></div><button class="primary" id="testMes">发送一条模拟结果</button></div>
+        <div class="mes-layout">
+          <article class="card"><h2>上传给MES的内容</h2><table><tbody><tr><th>产品</th><td>工单号、产品SN、车型/配置</td></tr><tr><th>工位</th><td>产线、工位、班次、操作员</td></tr><tr><th>SOP</th><td>配方版本、步骤结果、开始/结束时间</td></tr><tr><th>质量</th><td>漏装/错序告警、扭矩、角度、最终判定</td></tr><tr><th>证据</th><td>关键帧、短视频、模型版本、事件编号</td></tr></tbody></table></article>
+          <article class="card payload-card"><h2>一条结果长什么样</h2><pre>{
+  "product_sn": "NB202608160001",
+  "station_id": "NB-IP-SOP-01",
+  "recipe": "IP-ASSEMBLY-V1",
+  "visual_sequence": "PASS",
+  "torque_result": "WAITING",
+  "final_result": "HOLD",
+  "evidence_video": "...mp4"
+}</pre><div id="mesResult" class="api-result">尚未发送</div></article>
+        </div>
+      </section>
+
+      <section class="view" id="view-roadmap">
+        <div class="page-head"><div><span class="eyebrow">DELIVERY ROADMAP</span><h1>怎么把SOP平台真正落地</h1><p>先做一个工位闭环，再复制到更多岗位；先证明能拦住错误，再谈规模化。</p></div></div>
+        <div class="roadmap">
+          <article><b>第1阶段 · 2周</b><h2>样板工位</h2><p>固定相机和补光，确认6–12个关键步骤，接入一把电动工具，跑通实时告警和证据留存。</p><span>输出：可演示闭环</span></article>
+          <article><b>第2阶段 · 4–6周</b><h2>模型与MES</h2><p>采集正常/异常数据，完成标注、训练、冻结测试集验收，对接MES测试环境。</p><span>输出：可验收试生产</span></article>
+          <article><b>第3阶段 · 2–4周</b><h2>试运行与复制</h2><p>连续运行、统计误报漏报、优化节拍，培训工艺和质量人员自己维护新岗位。</p><span>输出：可复制的平台</span></article>
+        </div>
+        <div class="two-col">
+          <article class="card"><h2>每个工位建议配置</h2><ul class="check-list"><li>1–2台固定工业相机：大总成建议俯视+侧视</li><li>稳定无频闪补光，治具和相机位置不可随意移动</li><li>一台带RTX 4060或更高显卡的工控机，先按2路相机验收</li><li>与电动工具控制器连接，读取PSet、扭矩、角度</li><li>与MES联调工单下发、结果上传、离线补传</li></ul></article>
+          <article class="card"><h2>管理上需要谁参与</h2><ul class="owner-list"><li><b>工艺：</b>定义正确顺序、孔位和异常处理</li><li><b>质量：</b>定义验收门槛、抽检标注和签字放行</li><li><b>生产：</b>安排样板工位和现场试运行</li><li><b>IT/MES：</b>提供接口、网络、账号和服务器</li><li><b>乙方：</b>平台、模型、部署、培训和质保</li></ul></article>
+        </div>
+        <article class="card final-message"><span>给老板的汇报口径</span><blockquote>“我们不是只买一个识别模型，而是建设一套公司可以自己维护的SOP分析平台。先用仪表板样板工位跑通录像、识别、顺序防错、现场告警和MES追溯；稳定后由工艺人员在平台上新增岗位、标注数据、训练模型并灰度下发。”</blockquote></article>
+      </section>
+
+      <section class="view" id="view-quality">
+        <div class="page-head"><div><span class="eyebrow">DATA QUALITY / MODEL BENCHMARK</span><h1>标注、数据质量与模型对比</h1><p>视频标注、数据集复核、模型性能和部署选择集中在一个工作页。</p></div><span class="badge green">中文报告已生成</span></div>
+        <div class="quality-toolbar card">
+          <div><b>Label Studio 视频标注</b><span id="labelStudioStatus">正在检查服务地址…</span></div>
+          <a class="primary" id="labelStudioLink" href="http://127.0.0.1:8080" target="_blank" rel="noreferrer">打开 Label Studio</a>
+        </div>
+        <div class="quality-grid">
+          <article class="card"><div class="card-title"><div><span class="eyebrow">ANNOTATION HANDOFF</span><h2>上传视频到标注软件</h2></div><span class="badge">Label Studio / CVAT</span></div><p class="quality-copy">历史五段视频和实时采集分段保留在项目媒体目录；可在 Label Studio 做时间段、分类、检测和人工审核，再回到本平台做 Datumaro 转换和 FiftyOne QA。</p><div class="integration-links"><a class="ghost" id="labelStudioVideoLink" href="http://127.0.0.1:8080" target="_blank" rel="noreferrer">视频时序标注</a><a class="ghost" href="https://app.cvat.ai" target="_blank" rel="noreferrer">CVAT（内网部署）</a></div><div class="tip">正式生产数据应把 Label Studio/CVAT 部署在 DGX 或厂内服务器，浏览器只访问内网地址。</div></article>
+          <article class="card"><div class="card-title"><div><span class="eyebrow">BENCHMARK</span><h2>工业模型性能对比</h2></div><span class="badge green" id="benchmarkStatus">加载中</span></div><div class="benchmark-kpis"><div><b id="benchmarkBestFps">--</b><span>最高吞吐</span></div><div><b id="benchmarkBestLatency">--</b><span>最低延迟</span></div><div><b id="benchmarkImages">--</b><span>验证图片</span></div></div><p class="quality-copy" id="benchmarkTruth">当前指标加载中。</p></article>
+        </div>
+        <div class="benchmark-chart-grid" id="benchmarkCharts"></div>
+        <article class="card algorithm-card">
+          <div class="card-title"><div><span class="eyebrow">THREE-MODEL SELECTION</span><h2>三算法工业部署选型</h2></div><span class="badge" id="algorithmStatus">加载中</span></div>
+          <p class="quality-copy" id="algorithmRecommendation">正在读取选型建议。</p>
+          <div class="algorithm-table-wrap"><table class="algorithm-table"><thead><tr><th>模型</th><th>架构/定位</th><th>本项目证据</th><th>主要风险</th><th>建议</th></tr></thead><tbody id="algorithmRows"><tr><td colspan="5">正在加载三算法对比…</td></tr></tbody></table></div>
+          <div class="tip" id="algorithmTruth">未完成同数据、同硬件验收前，不替换量产模型。</div>
+        </article>
+        <article class="card ipc-card">
+          <div class="card-title"><div><span class="eyebrow">IPC / STATION AGENT</span><h2>工控机软件与设备统一管理</h2></div><span class="badge" id="ipcSummary">检查中</span></div>
+          <div class="ipc-architecture"><div><b>设备侧 LAN</b><span>相机 · 扫码枪 · 打印机 · USB485 · PLC/电批</span></div><i>→</i><div><b>IPC Station Agent</b><span>Camera Service · Adapter · SOP FSM · SQLite队列 · HMI</span></div><i>→</i><div><b>AI / MES LAN</b><span>DGX FastAPI/Triton · MES/工厂服务器 · 审计回传</span></div></div>
+          <div class="software-table-wrap"><table class="software-table"><thead><tr><th>软件/组件</th><th>用途</th><th>状态</th><th>地址/说明</th></tr></thead><tbody id="softwareStatusRows"><tr><td colspan="4">正在检查 DGX/IPC 软件环境…</td></tr></tbody></table></div>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

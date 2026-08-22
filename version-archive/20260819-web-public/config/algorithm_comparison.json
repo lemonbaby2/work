@@ -1,0 +1,51 @@
+{
+  "ok": true,
+  "title": "工业检测三算法候选对比",
+  "generated_at": "2026-08-18",
+  "recommendation": "以YOLO26作为当前实时基线，同时在同一人工冻结测试集上并行验证RT-DETRv2与D-FINE；未完成同数据、同硬件、同阈值验收前，不替换量产模型。",
+  "truth_boundary": "只有YOLO26在本项目本机报告中有实测延迟数据；RT-DETRv2和D-FINE当前为开源候选，页面不展示虚构精度或吞吐数值。",
+  "acceptance_protocol": [
+    "使用质量人员签字的冻结测试集，正常/漏装/错序/遮挡/反光/小目标分别分层",
+    "同一DGX或工控机、相同输入尺寸、相同TensorRT精度和预热策略进行测试",
+    "同时报告mAP50-95、关键漏装召回率、每百件误报、P95延迟、显存和连续运行稳定性",
+    "任何新模型先在一个工位影子运行，再灰度放量，并保留一键回滚"
+  ],
+  "models": [
+    {
+      "name": "YOLO26",
+      "family": "YOLO",
+      "role": "当前实时基线",
+      "status": "已具备本项目本机延迟样本",
+      "repository": "https://github.com/ultralytics/ultralytics",
+      "license_note": "部署前按Ultralytics当期许可证与商业授权要求复核。",
+      "local_evidence": "现有24张待复核预标注样本中，YOLO26n本机报告为5.498 ms、181.87 FPS；该结果仅是速度样本，不是量产精度结论。",
+      "strengths": ["现有代码和权重可直接复用", "部署链路成熟，便于导出ONNX/TensorRT", "实时吞吐适合作为工位基线"],
+      "risks": ["待复核标签不能用于宣称精度", "小螺钉与孔位仍依赖切片、特写相机或更高分辨率"],
+      "decision": "保留为第一阶段上线与回归基线"
+    },
+    {
+      "name": "RT-DETRv2",
+      "family": "实时Transformer检测器",
+      "role": "非YOLO稳定性候选",
+      "status": "待拉取权重并在DGX复测",
+      "repository": "https://github.com/lyuwenyu/RT-DETR",
+      "license_note": "以官方仓库当前许可证和权重使用条款为准。",
+      "local_evidence": "尚未在本项目冻结测试集与目标硬件上实测，不填写FPS、延迟或精度。",
+      "strengths": ["端到端检测，减少NMS相关调参", "官方实现提供多尺度模型，适合做精度/速度折中", "可作为不同架构的交叉验证模型"],
+      "risks": ["TensorRT导出和动态输入需单独验证", "小目标工业数据仍需要领域微调与现场压力测试"],
+      "decision": "作为第二候选，重点比较遮挡场景召回率和P95延迟"
+    },
+    {
+      "name": "D-FINE",
+      "family": "细粒度分布优化实时检测器",
+      "role": "非YOLO精度候选",
+      "status": "待拉取权重并在DGX复测",
+      "repository": "https://github.com/Peterande/D-FINE",
+      "license_note": "以官方仓库当前许可证、第三方骨干网络和权重条款为准。",
+      "local_evidence": "尚未在本项目冻结测试集与目标硬件上实测，不填写FPS、延迟或精度。",
+      "strengths": ["面向边界定位质量优化，适合纳入小零件框选对比", "提供不同规模模型，便于选择工位侧或DGX侧部署", "架构不同于YOLO，可降低单一模型偏差"],
+      "risks": ["工业小目标优势必须由本项目真值验证", "推理后端、算子兼容和长期运行稳定性需单独验收"],
+      "decision": "作为第三候选，重点比较小目标定位与关键漏装召回率"
+    }
+  ]
+}

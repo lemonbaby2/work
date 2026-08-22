@@ -1,0 +1,11 @@
+{
+  "stations": {
+    "P": {"label": "插件", "actions": ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"]},
+    "W": {"label": "波峰焊", "actions": ["W1", "W2", "W3", "W4", "W5", "W6", "W7"]},
+    "H": {"label": "手工焊", "actions": ["H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9", "H10"]}
+  },
+  "objects": ["PCB", "元件", "烙铁", "焊锡丝", "料盒"],
+  "rois": ["插件区", "焊盘面", "极性标记区"],
+  "temperature": {"enabled": true, "linked_actions": ["H3", "H4", "H5", "H6", "H7"], "unit": "C", "heating_duration_s": [1, 2]},
+  "boundary": "动作区间由手进入画面/板进入画面开始，到手离开/板离开画面结束；每个工位为准备→循环作业×N→自检→流转。"
+}

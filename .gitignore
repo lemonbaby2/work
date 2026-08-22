@@ -26,3 +26,4 @@
 *.engine
 *.ts
 **/weights/
+sop-platform/releases/

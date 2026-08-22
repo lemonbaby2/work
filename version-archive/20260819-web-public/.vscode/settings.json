@@ -1,0 +1,36 @@
+{
+  "python.defaultInterpreterPath": "/home/xjai/micromamba/envs/sop/bin/python3.12",
+  "python.terminal.activateEnvironment": false,
+  "files.encoding": "utf8",
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.env.linux": {
+    "PATH": "/home/xjai/micromamba/envs/sop/bin:${env:PATH}"
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/__pycache__/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.pytest_cache/**": true,
+    "**/runs/**": true,
+    "**/weights/**": true,
+    "**/models/**": true,
+    "**/*.zip": true,
+    "**/*.pt": true,
+    "**/*.onnx": true,
+    "**/*.engine": true,
+    "**/*.mp4": true
+  },
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/runs": true,
+    "**/weights": true,
+    "**/models": true,
+    "**/*.zip": true,
+    "**/*.pt": true,
+    "**/*.onnx": true,
+    "**/*.engine": true,
+    "**/*.mp4": true
+  },
+  "jupyter.notebookFileRoot": "${workspaceFolder}"
+}

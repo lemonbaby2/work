@@ -1,0 +1,127 @@
+{
+  "verified_at": "2026-08-16 19:55:17",
+  "overall": "PASS",
+  "results": [
+    {
+      "name": "video_de02增强视频",
+      "status": "PASS",
+      "detail": {
+        "frames": 2326,
+        "fps": 30.0,
+        "path": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_YOLOv8逐帧识别演示_小目标增强版.mp4"
+      }
+    },
+    {
+      "name": "video_de02右侧SOP步骤面板视频",
+      "status": "PASS",
+      "detail": {
+        "frames": 2326,
+        "fps": 30.0,
+        "resolution": "1620×720",
+        "path": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_YOLOv8逐帧识别演示_小目标增强版_右侧SOP步骤面板版.mp4"
+      }
+    },
+    {
+      "name": "video_de02紧固点逐帧记录",
+      "status": "PASS",
+      "detail": 2326
+    },
+    {
+      "name": "video_d66增强视频",
+      "status": "PASS",
+      "detail": {
+        "frames": 2361,
+        "fps": 30.0,
+        "path": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频二_d66_YOLOv8逐帧智能分析_小目标增强版.mp4"
+      }
+    },
+    {
+      "name": "video_d66右侧SOP步骤面板视频",
+      "status": "PASS",
+      "detail": {
+        "frames": 2361,
+        "fps": 30.0,
+        "resolution": "1620×720",
+        "path": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频二_d66_YOLOv8逐帧智能分析_小目标增强版_右侧SOP步骤面板版.mp4"
+      }
+    },
+    {
+      "name": "video_d66紧固点逐帧记录",
+      "status": "PASS",
+      "detail": 2361
+    },
+    {
+      "name": "video_e344增强视频",
+      "status": "PASS",
+      "detail": {
+        "frames": 2320,
+        "fps": 30.0,
+        "path": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频三_e344_YOLOv8逐帧智能分析_小目标增强版.mp4"
+      }
+    },
+    {
+      "name": "video_e344右侧SOP步骤面板视频",
+      "status": "PASS",
+      "detail": {
+        "frames": 2320,
+        "fps": 30.0,
+        "resolution": "1620×720",
+        "path": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频三_e344_YOLOv8逐帧智能分析_小目标增强版_右侧SOP步骤面板版.mp4"
+      }
+    },
+    {
+      "name": "video_e344紧固点逐帧记录",
+      "status": "PASS",
+      "detail": 2320
+    },
+    {
+      "name": "三视频汇总",
+      "status": "PASS",
+      "detail": {
+        "videos": 3,
+        "frames": 7007,
+        "duration_s": 233.56,
+        "steps": 18
+      }
+    },
+    {
+      "name": "增强视频总帧数",
+      "status": "PASS",
+      "detail": 7007
+    },
+    {
+      "name": "右侧SOP步骤视频总帧数",
+      "status": "PASS",
+      "detail": 7007
+    },
+    {
+      "name": "预标注图片与标签",
+      "status": "PASS",
+      "detail": {
+        "images": 469,
+        "labels": 469,
+        "manifest": 469
+      }
+    },
+    {
+      "name": "YOLO标签格式",
+      "status": "PASS",
+      "detail": "class 0-6，坐标0-1"
+    },
+    {
+      "name": "智能决策页面",
+      "status": "PASS",
+      "detail": "页面模块齐全"
+    },
+    {
+      "name": "三视频前端逻辑",
+      "status": "PASS",
+      "detail": "网页优先播放右侧SOP步骤面板版"
+    },
+    {
+      "name": "真实性边界",
+      "status": "PASS",
+      "detail": "候选框不冒充真值"
+    }
+  ]
+}

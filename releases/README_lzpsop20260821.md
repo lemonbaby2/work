@@ -8,9 +8,17 @@ The 2026-08-21 annotation update adds:
 
 - fixed-station annotation scope and material-class guidance;
 - video playback, frame stepping, configurable jumps, timeline seeking, and direct frame input;
-- explicit start/end keyframe interpolation with visible track IDs and generated frame lists;
-- audited deletion for saved manual boxes and complete tracks;
+- automatic video-content tracking with optional human end-keyframe correction, visible track IDs, and generated frame lists;
+- draggable tracked boxes with eight resize handles and overwrite-save support;
+- audited deletion for AI candidates, saved manual boxes, individual tracked boxes, and complete tracks;
+- exact-frame SQLite queries plus stale-request cancellation for faster frame jumps;
+- persistent CVAT ARM64/amd64 binfmt recovery through the local storage guard timer;
 - browser media cache recovery after login and updated Chinese operating manuals.
+
+The 2026-08-22 archive update additionally records all distinct local web generations,
+deploys them on isolated LAN ports, restores the current integrated version to port 8096,
+and adds a version index at port 8099. See `SOP_VERSION_INDEX_20260822.md` and
+`deploy/versioned/README.md` in the repository.
 
 The public bundle intentionally excludes passwords, API tokens, runtime databases, camera recordings, large model weights, and production annotation data. Those restricted or oversized artifacts are delivered to the authorized Windows host under:
 

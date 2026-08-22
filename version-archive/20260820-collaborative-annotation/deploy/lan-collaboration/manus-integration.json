@@ -1,0 +1,13 @@
+{
+  "manus_site": "https://sop-pcb-ai-g89st3df.manus.space/",
+  "integration_mode": "external-link-or-https-reverse-proxy",
+  "factory_app_public_url": "https://sop.factory.example.com/",
+  "factory_cvat_public_url": "https://sop.factory.example.com/cvat/",
+  "health_check": "https://sop.factory.example.com/api/health",
+  "security_boundary": "Manus只保存入口和单点登录跳转；视频、标注真值、模型与SQLite保留在厂内服务器。",
+  "required_manus_changes": [
+    "在数据标注导航项配置 factory_app_public_url#annotation",
+    "使用新窗口跳转；不要把HTTP局域网地址嵌入HTTPS iframe",
+    "如需统一域名，配置受控HTTPS反向代理并限制企业账号或VPN来源"
+  ]
+}

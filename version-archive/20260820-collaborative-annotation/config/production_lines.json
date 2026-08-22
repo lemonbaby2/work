@@ -1,0 +1,45 @@
+[
+  {
+    "id": "pcb",
+    "name": "产线一 · PCB电子元器件SOP",
+    "short_name": "PCB贴片/焊接",
+    "primary_model": "YOLO26N",
+    "model_status": "迁移学习候选，待PCB现场真值微调验收",
+    "teacher_model": "YOLOE-26S + SAHI",
+    "secondary_models": ["RT-DETRv2", "D-FINE", "Anomalib PatchCore/EfficientAD"],
+    "dataset_ids": ["pcb-components", "pcb-normal-assembly", "pcb-ng-poka-yoke", "industrial-anomaly"],
+    "labels": ["PCB板", "电阻", "电容", "电感", "二极管", "芯片", "连接器", "焊点", "缺件", "错件", "手部", "烙铁/焊枪", "LED异常", "MAC不一致"],
+    "inputs": ["工业摄像头", "扫码枪", "串口/RS232/RS485", "MES"],
+    "checks": ["漏装", "错装", "错序", "LED异常", "MAC不一致", "操作步骤", "工人防错动作"],
+    "transfer": "以现有YOLO/视觉编码器为基座，先冻结骨干网络，再用本产线CVAT真值做小学习率微调；按产品族保留冻结测试集。"
+  },
+  {
+    "id": "automotive",
+    "name": "产线二 · 车载电子模块装配",
+    "short_name": "汽车零部件/固定件",
+    "primary_model": "YOLO26N",
+    "model_status": "现有汽车装配基线，待按新工位冻结测试集验收",
+    "teacher_model": "YOLOE-26S + SAHI",
+    "secondary_models": ["RT-DETRv2", "D-FINE"],
+    "dataset_ids": ["automotive-fasteners", "automotive-sop-ng", "assembly-actions"],
+    "labels": ["仪表板总成", "仪表板骨架", "饰板总成", "线束", "电气接插件", "电动紧固工具", "操作人员手部", "螺钉头", "螺栓头", "塑料卡扣", "线束插头", "紧固孔", "漏装", "错装", "错序"],
+    "inputs": ["1-3路工业摄像头", "扫码枪", "电批串口", "PLC/OPC UA", "MES"],
+    "checks": ["漏装", "错装", "错序", "紧固孔/螺丝", "工具到位", "扭矩回执", "MES追溯"],
+    "transfer": "复用汽车装配视觉骨干和SOP状态机；将零件识别、动作识别、工具报文和 MES 回执分成可独立迁移的适配器。"
+  },
+  {
+    "id": "molding-coating",
+    "name": "产线三 · 模塑/涂料与胶水",
+    "short_name": "喷涂/胶水/表面缺陷",
+    "primary_model": "YOLO26N",
+    "quality_model": "Anomalib PatchCore/EfficientAD",
+    "model_status": "检测器可运行；异常检测器待正常样本训练和现场NG验收",
+    "teacher_model": "YOLOE-26S + SAHI",
+    "secondary_models": ["YOLO26N", "D-FINE"],
+    "dataset_ids": ["coating-defects", "industrial-anomaly", "molding-surface-ng"],
+    "labels": ["产品表面", "划痕", "污迹", "凹凸不平", "喷涂区域", "胶枪", "胶线", "断胶", "漏喷", "不均匀", "喷胶轨迹", "连续出胶"],
+    "inputs": ["固定工业摄像头", "光源控制", "串口/PLC", "MES"],
+    "checks": ["划痕", "污迹", "凹凸不平", "喷涂均匀", "喷胶轨迹", "连续出胶", "异常告警", "MES结果"],
+    "transfer": "正常样本先训练异常检测基线，缺陷样本再做监督微调；几何区域由 ROI/Mask 约束，避免跨产品背景变化导致误报。"
+  }
+]

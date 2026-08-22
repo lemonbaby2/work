@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-08-16 17:35:04",
+  "source": "E:\\宁波项目\\测试验视频\\de02e8d2b5e46b5f804650c4db9d3b98.mp4",
+  "video": "media/仪表板SOP_YOLOv8逐帧识别演示.mp4",
+  "source_video": "media/原始测试视频_de02.mp4",
+  "model": "E:\\宁波项目\\SOP分析平台_老板汇报版\\models\\yolov8s-worldv2.pt",
+  "algorithm": "YOLOv8-World + 固定相机ROI + SOP顺序状态机",
+  "gpu": "NVIDIA GeForce RTX 4060",
+  "frames": 2326,
+  "fps": 30.000128977338683,
+  "resolution": "1280×720",
+  "duration_s": 77.53,
+  "part_labels_per_frame": 4,
+  "yolo_detection_counts": {
+    "操作人员手部": 1142,
+    "电动紧固工具": 102
+  },
+  "sequence_result": "视觉演示通过",
+  "production_release": "HOLD",
+  "production_release_reason": "测试视频不含拧紧控制器的PSet、扭矩、角度原始报文，也未收到MES应答",
+  "evidence_boundary": "零件区域为固定相机方案的初始ROI标定；步骤时间为本段视频人工复核演示基准，不作为量产精度结论",
+  "events": [
+    {
+      "time_s": 10.0,
+      "step_id": "S01",
+      "step_label": "确认仪表板骨架到位",
+      "status": "视觉复核通过",
+      "evidence": "演示视频人工复核时间段 + YOLOv8手部/工具辅助框"
+    },
+    {
+      "time_s": 23.0,
+      "step_id": "S02",
+      "step_label": "放置前除霜风道",
+      "status": "视觉复核通过",
+      "evidence": "演示视频人工复核时间段 + YOLOv8手部/工具辅助框"
+    },
+    {
+      "time_s": 35.0,
+      "step_id": "S03",
+      "step_label": "风道卡扣压合",
+      "status": "视觉复核通过",
+      "evidence": "演示视频人工复核时间段 + YOLOv8手部/工具辅助框"
+    },
+    {
+      "time_s": 50.0,
+      "step_id": "S04",
+      "step_label": "左侧紧固作业",
+      "status": "视觉复核通过",
+      "evidence": "演示视频人工复核时间段 + YOLOv8手部/工具辅助框"
+    },
+    {
+      "time_s": 64.0,
+      "step_id": "S05",
+      "step_label": "右侧紧固作业",
+      "status": "视觉复核通过",
+      "evidence": "演示视频人工复核时间段 + YOLOv8手部/工具辅助框"
+    },
+    {
+      "time_s": 77.6,
+      "step_id": "S06",
+      "step_label": "完成检查并流转",
+      "status": "视觉复核通过",
+      "evidence": "演示视频人工复核时间段 + YOLOv8手部/工具辅助框"
+    }
+  ],
+  "processing_seconds": 114.5
+}

@@ -1,0 +1,149 @@
+{
+  "id": "video_d66",
+  "display_name": "视频二｜仪表板背部装配与紧固",
+  "source": "E:\\宁波项目\\测试验视频\\d66dc6ba16fbda15ad503011839aca9f.mp4",
+  "video": "media/仪表板SOP_视频二_d66_YOLOv8逐帧智能分析.mp4",
+  "source_video": "media/原始测试视频_d66.mp4",
+  "frames": 2361,
+  "fps": 30.0,
+  "resolution": "1280×720",
+  "duration_s": 78.7,
+  "algorithm": "YOLOv8-World + BoT-SORT跨帧跟踪 + 固定相机ROI + SOP状态机 + 可解释决策门",
+  "parts": [
+    {
+      "id": "P01",
+      "label": "仪表板总成",
+      "roi": [
+        0.01,
+        0.05,
+        0.99,
+        0.93
+      ]
+    },
+    {
+      "id": "P02",
+      "label": "背部骨架组件",
+      "roi": [
+        0.08,
+        0.15,
+        0.94,
+        0.88
+      ]
+    },
+    {
+      "id": "P03",
+      "label": "中央风道/模块",
+      "roi": [
+        0.36,
+        0.3,
+        0.72,
+        0.82
+      ]
+    },
+    {
+      "id": "P04",
+      "label": "吸音棉及线束区域",
+      "roi": [
+        0.02,
+        0.38,
+        0.78,
+        0.92
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "S01",
+      "label": "外观与骨架到位确认",
+      "start_s": 0.0,
+      "end_s": 12.0,
+      "roi": [
+        0.03,
+        0.08,
+        0.97,
+        0.91
+      ]
+    },
+    {
+      "id": "S02",
+      "label": "总成翻转与定位",
+      "start_s": 12.0,
+      "end_s": 25.0,
+      "roi": [
+        0.08,
+        0.1,
+        0.94,
+        0.9
+      ]
+    },
+    {
+      "id": "S03",
+      "label": "吸音棉与线束整理",
+      "start_s": 25.0,
+      "end_s": 38.0,
+      "roi": [
+        0.02,
+        0.35,
+        0.8,
+        0.94
+      ]
+    },
+    {
+      "id": "S04",
+      "label": "左侧紧固作业",
+      "start_s": 38.0,
+      "end_s": 52.0,
+      "roi": [
+        0.05,
+        0.2,
+        0.48,
+        0.82
+      ]
+    },
+    {
+      "id": "S05",
+      "label": "中央及右侧紧固",
+      "start_s": 52.0,
+      "end_s": 67.0,
+      "roi": [
+        0.4,
+        0.2,
+        0.95,
+        0.84
+      ]
+    },
+    {
+      "id": "S06",
+      "label": "完成检查与下线",
+      "start_s": 67.0,
+      "end_s": 78.7,
+      "roi": [
+        0.03,
+        0.08,
+        0.97,
+        0.92
+      ]
+    }
+  ],
+  "yolo_detection_counts": {
+    "操作人员手部": 1789,
+    "电动紧固工具": 163
+  },
+  "unique_track_counts": {
+    "操作人员手部": 39,
+    "电动紧固工具": 0
+  },
+  "visual_result": "PASS（演示基准）",
+  "production_release": "HOLD",
+  "release_reason": "缺少真实PSet/扭矩/角度报文与MES回执",
+  "evidence_boundary": "步骤区间由视频人工复核建立；零件ROI用于固定相机方案演示，不能代替量产专用模型精度验收",
+  "snapshots": [
+    "snapshots/video_d66/S01_06秒.jpg",
+    "snapshots/video_d66/S02_18秒.jpg",
+    "snapshots/video_d66/S03_32秒.jpg",
+    "snapshots/video_d66/S04_45秒.jpg",
+    "snapshots/video_d66/S05_60秒.jpg",
+    "snapshots/video_d66/S06_73秒.jpg"
+  ],
+  "processing_seconds": 153.6
+}

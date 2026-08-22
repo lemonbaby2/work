@@ -1,0 +1,5 @@
+{
+  "python.defaultInterpreterPath": "/home/xjai/micromamba/envs/sop/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "files.encoding": "utf8"
+}

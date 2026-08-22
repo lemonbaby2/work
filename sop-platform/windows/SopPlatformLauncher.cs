@@ -4,9 +4,17 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+
+[assembly: AssemblyTitle("SOP平台")]
+[assembly: AssemblyDescription("宁波零部件 SOP 平台与 DGX 三路低延迟目标检测客户端")]
+[assembly: AssemblyCompany("宁波零部件 SOP 项目")]
+[assembly: AssemblyProduct("SOP平台")]
+[assembly: AssemblyVersion("2026.8.21.0")]
+[assembly: AssemblyFileVersion("2026.8.21.0")]
 
 namespace SopPlatformLauncher
 {
@@ -53,8 +61,8 @@ namespace SopPlatformLauncher
             Directory.CreateDirectory(runtimeRoot);
 
             Text = "宁波零部件 SOP 分析平台";
-            Size = new Size(640, 390);
-            MinimumSize = new Size(640, 390);
+            Size = new Size(640, 450);
+            MinimumSize = new Size(640, 450);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(237, 242, 244);
             Font = new Font("Microsoft YaHei UI", 9F);
@@ -72,13 +80,18 @@ namespace SopPlatformLauncher
             stopButton = MakeButton("停止服务", 174, false);
             openButton = MakeButton("打开网页", 310, true);
             Button dataButton = MakeButton("打开数据目录", 446, false);
+            Button monitorButton = new Button {
+                Text = "打开 DGX 三路原生监控", Location = new Point(38, 294), Size = new Size(548, 40), FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(23, 56, 74), ForeColor = Color.White
+            };
             startButton.Click += delegate { StartServer(); };
             stopButton.Click += delegate { StopServer(); };
             openButton.Click += delegate { OpenUrl(); };
             dataButton.Click += delegate { Process.Start("explorer.exe", appRoot); };
+            monitorButton.Click += delegate { new NativeMonitorForm().Show(); };
 
-            Label note = new Label { Text = "量产状态：HOLD。自动预标注、NG、稀有类别和工序边界须人工复核。", AutoSize = true, Location = new Point(39, 302), ForeColor = Color.FromArgb(150, 93, 25) };
-            Controls.AddRange(new Control[] { title, subtitle, statusPanel, startButton, stopButton, openButton, dataButton, note });
+            Label note = new Label { Text = "量产状态：HOLD。自动预标注、NG、稀有类别和工序边界须人工复核。", AutoSize = true, Location = new Point(39, 358), ForeColor = Color.FromArgb(150, 93, 25) };
+            Controls.AddRange(new Control[] { title, subtitle, statusPanel, startButton, stopButton, openButton, dataButton, monitorButton, note });
 
             healthTimer = new System.Windows.Forms.Timer { Interval = 2000 };
             healthTimer.Tick += async delegate { await RefreshHealth(); };
@@ -86,7 +99,11 @@ namespace SopPlatformLauncher
             {
                 healthTimer.Start();
                 await RefreshHealth();
-                if (!IsHealthy()) StartServer();
+                if (!IsHealthy())
+                {
+                    if (File.Exists(Path.Combine(appRoot, "server.py"))) StartServer();
+                    else SetState(false, "未配置本地后端；可直接打开 DGX 三路原生监控");
+                }
             };
             FormClosing += delegate { if (serverProcess != null && !serverProcess.HasExited) StopServer(); };
         }
@@ -221,6 +238,203 @@ namespace SopPlatformLauncher
         private void OpenUrl()
         {
             Process.Start(new ProcessStartInfo("http://127.0.0.1:" + Port) { UseShellExecute = true });
+        }
+    }
+
+    internal sealed class NativeMonitorForm : Form
+    {
+        private readonly TextBox serverBox;
+        private readonly TextBox userBox;
+        private readonly TextBox passwordBox;
+        private readonly Label stateLabel;
+        private readonly PictureBox[] feeds = new PictureBox[3];
+        private readonly Label[] feedStates = new Label[3];
+        private CookieContainer cookies;
+        private CancellationTokenSource cancellation;
+        private string serverUrl;
+
+        internal NativeMonitorForm()
+        {
+            Text = "DGX 三路低延迟目标检测";
+            Size = new Size(1180, 720);
+            MinimumSize = new Size(920, 600);
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Color.FromArgb(237, 242, 244);
+            Font = new Font("Microsoft YaHei UI", 9F);
+
+            Panel connection = new Panel { Dock = DockStyle.Top, Height = 86, BackColor = Color.White };
+            connection.Controls.Add(new Label { Text = "DGX 地址", Location = new Point(18, 13), AutoSize = true });
+            serverBox = new TextBox { Text = "http://192.168.1.129:8096", Location = new Point(18, 34), Width = 255 };
+            connection.Controls.Add(serverBox);
+            connection.Controls.Add(new Label { Text = "账号", Location = new Point(290, 13), AutoSize = true });
+            userBox = new TextBox { Text = "", Location = new Point(290, 34), Width = 130 };
+            connection.Controls.Add(userBox);
+            connection.Controls.Add(new Label { Text = "密码", Location = new Point(437, 13), AutoSize = true });
+            passwordBox = new TextBox { Location = new Point(437, 34), Width = 150, UseSystemPasswordChar = true };
+            connection.Controls.Add(passwordBox);
+            Button connectButton = new Button { Text = "连接并启动三路", Location = new Point(606, 30), Size = new Size(150, 34), BackColor = Color.FromArgb(13, 143, 121), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            connectButton.Click += async delegate { await ConnectAll(); };
+            connection.Controls.Add(connectButton);
+            stateLabel = new Label { Text = "输入平台账号后连接；画面直接读取 DGX 最新检测帧。", Location = new Point(774, 35), Size = new Size(365, 32), ForeColor = Color.FromArgb(79, 103, 113) };
+            connection.Controls.Add(stateLabel);
+            Controls.Add(connection);
+
+            TableLayoutPanel grid = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 2, RowCount = 2 };
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            for (int camera = 0; camera < feeds.Length; camera++)
+            {
+                Panel tile = new Panel { Dock = DockStyle.Fill, Margin = new Padding(6), BackColor = Color.FromArgb(7, 16, 24) };
+                feeds[camera] = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(7, 16, 24) };
+                feedStates[camera] = new Label { Text = "摄像头 " + camera + " · 待连接", Dock = DockStyle.Bottom, Height = 28, Padding = new Padding(8, 6, 0, 0), ForeColor = Color.White, BackColor = Color.FromArgb(23, 56, 74) };
+                tile.Controls.Add(feeds[camera]);
+                tile.Controls.Add(feedStates[camera]);
+                grid.Controls.Add(tile, camera % 2, camera / 2);
+            }
+            Panel note = new Panel { Dock = DockStyle.Fill, Margin = new Padding(6), BackColor = Color.White };
+            note.Controls.Add(new Label {
+                Dock = DockStyle.Fill, Padding = new Padding(18),
+                Text = "低延迟策略\r\n\r\n• 不加载完整管理网页，直接消费容量 1 的最新检测帧\r\n• 三路画面彼此独立重连\r\n• 关闭窗口不会停止 DGX 推理服务\r\n• 质量放行仍保持 HOLD，检测框必须人工复核",
+                ForeColor = Color.FromArgb(45, 68, 78)
+            });
+            grid.Controls.Add(note, 1, 1);
+            Controls.Add(grid);
+            FormClosing += delegate { if (cancellation != null) cancellation.Cancel(); };
+        }
+
+        private async Task ConnectAll()
+        {
+            string rawUrl = serverBox.Text.Trim().TrimEnd('/');
+            if (!Uri.IsWellFormedUriString(rawUrl, UriKind.Absolute) || userBox.Text.Trim().Length == 0 || passwordBox.Text.Length == 0)
+            {
+                stateLabel.Text = "请填写有效的 DGX 地址、账号和密码。";
+                return;
+            }
+            stateLabel.Text = "正在登录并启动摄像头…";
+            serverUrl = rawUrl;
+            cookies = new CookieContainer();
+            try
+            {
+                await Task.Run(() => Authenticate(userBox.Text.Trim(), passwordBox.Text));
+                passwordBox.Clear();
+                await Task.Run(() => Post("/api/camera/start?camera=all", "{}"));
+                if (cancellation != null) cancellation.Cancel();
+                cancellation = new CancellationTokenSource();
+                for (int camera = 0; camera < feeds.Length; camera++)
+                {
+                    int cameraId = camera;
+                    StartCameraStream(cameraId, cancellation.Token);
+                }
+                stateLabel.Text = "三路检测已连接；各路断开后自动重连。";
+            }
+            catch (Exception exc)
+            {
+                stateLabel.Text = "连接失败：" + exc.Message;
+            }
+        }
+
+        private void StartCameraStream(int cameraId, CancellationToken token)
+        {
+            Task.Run(() => StreamCamera(cameraId, token));
+        }
+
+        private void Authenticate(string username, string password)
+        {
+            string json = "{\"username\":\"" + JsonEscape(username) + "\",\"password\":\"" + JsonEscape(password) + "\"}";
+            Post("/api/auth/login", json);
+        }
+
+        private string Post(string path, string json)
+        {
+            byte[] body = System.Text.Encoding.UTF8.GetBytes(json);
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(serverUrl + path);
+            request.Method = "POST";
+            request.ContentType = "application/json";
+            request.ContentLength = body.Length;
+            request.CookieContainer = cookies;
+            request.Timeout = 5000;
+            using (Stream stream = request.GetRequestStream()) stream.Write(body, 0, body.Length);
+            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+            using (StreamReader reader = new StreamReader(response.GetResponseStream())) return reader.ReadToEnd();
+        }
+
+        private void StreamCamera(int cameraId, CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    SetFeedState(cameraId, "摄像头 " + cameraId + " · 正在连接");
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(serverUrl + "/api/camera/mjpeg?camera=" + cameraId);
+                    request.CookieContainer = cookies;
+                    request.Timeout = 7000;
+                    request.ReadWriteTimeout = 7000;
+                    request.KeepAlive = true;
+                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    using (Stream stream = response.GetResponseStream()) ReadJpegFrames(cameraId, stream, token);
+                }
+                catch (Exception exc)
+                {
+                    if (token.IsCancellationRequested) return;
+                    SetFeedState(cameraId, "摄像头 " + cameraId + " · 重连：" + exc.Message);
+                    Thread.Sleep(1000);
+                }
+            }
+        }
+
+        private void ReadJpegFrames(int cameraId, Stream stream, CancellationToken token)
+        {
+            byte[] buffer = new byte[4 * 1024 * 1024];
+            int count = 0;
+            while (!token.IsCancellationRequested)
+            {
+                if (count == buffer.Length) count = 0;
+                int read = stream.Read(buffer, count, buffer.Length - count);
+                if (read <= 0) throw new IOException("检测流已断开");
+                count += read;
+                int start = FindMarker(buffer, count, 0xFF, 0xD8, 0);
+                if (start < 0) { if (count > 65536) count = 0; continue; }
+                int end = FindMarker(buffer, count, 0xFF, 0xD9, start + 2);
+                if (end < 0) continue;
+                int length = end + 2 - start;
+                Bitmap frame;
+                using (MemoryStream imageBytes = new MemoryStream(buffer, start, length, false, true))
+                using (Image decoded = Image.FromStream(imageBytes)) frame = new Bitmap(decoded);
+                ShowFrame(cameraId, frame);
+                int remaining = count - end - 2;
+                if (remaining > 0) Buffer.BlockCopy(buffer, end + 2, buffer, 0, remaining);
+                count = remaining;
+            }
+        }
+
+        private static int FindMarker(byte[] data, int length, byte first, byte second, int offset)
+        {
+            for (int index = Math.Max(0, offset); index < length - 1; index++)
+                if (data[index] == first && data[index + 1] == second) return index;
+            return -1;
+        }
+
+        private void ShowFrame(int cameraId, Bitmap frame)
+        {
+            if (IsDisposed) { frame.Dispose(); return; }
+            BeginInvoke((Action)(() => {
+                Image previous = feeds[cameraId].Image;
+                feeds[cameraId].Image = frame;
+                if (previous != null) previous.Dispose();
+                feedStates[cameraId].Text = "摄像头 " + cameraId + " · 实时目标检测";
+            }));
+        }
+
+        private void SetFeedState(int cameraId, string message)
+        {
+            if (!IsDisposed) BeginInvoke((Action)(() => feedStates[cameraId].Text = message));
+        }
+
+        private static string JsonEscape(string value)
+        {
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
         }
     }
 }

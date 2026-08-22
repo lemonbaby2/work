@@ -1,0 +1,42 @@
+[
+  {
+    "priority": "量产首选",
+    "solution": "工业 GigE 相机 + Wi-Fi 6 工业网桥",
+    "models": "Basler ace 2 / 海康机器人 MV-CA 系列 + 5 GHz 工业网桥",
+    "transport": "GigE Vision 到网桥，网桥无线回传；固定 IP/VLAN",
+    "budget_cny": "约 4000-12000 元/点位（含镜头、光源、支架、网桥）",
+    "latency": "典型 80-250 ms，现场实测后验收",
+    "fit": "关键质量工位、需要锁曝光/硬触发/稳定帧率",
+    "decision": "推荐。相机本体保持工业有线协议，无线只承担桥接，可靠性和可维护性最好。"
+  },
+  {
+    "priority": "低预算试点",
+    "solution": "固定式 Wi-Fi 网络摄像头",
+    "models": "Reolink RLC-510WA（选购前确认所在区域固件开放 RTSP/ONVIF）",
+    "transport": "5 GHz Wi-Fi，RTSP/H.264 主码流",
+    "budget_cny": "约 500-1000 元/点位（不含补光与支架）",
+    "latency": "典型 250-800 ms，关闭云转发并缩短 GOP",
+    "fit": "非关键工位、概念验证、环境总览",
+    "decision": "可试点，不用于硬实时放行；必须实测 RTSP、断网重连和持续 8 小时稳定性。"
+  },
+  {
+    "priority": "国内渠道备选",
+    "solution": "支持 ONVIF/RTSP 的 4MP/5MP Wi-Fi IPC",
+    "models": "TP-Link VIGI Wi-Fi 固定机型或海康威视带 -W 后缀固定机型",
+    "transport": "5 GHz Wi-Fi，RTSP/H.264；禁用厂商云依赖",
+    "budget_cny": "约 400-1200 元/点位",
+    "latency": "典型 300-1000 ms，以样机抓流测试为准",
+    "fit": "仓储、看板、低速工序辅助观察",
+    "decision": "采购前要求供应商现场证明 RTSP/ONVIF、固定 IP、码率/GOP 可配，型号和固件写入合同。"
+  },
+  {
+    "priority": "现有设备",
+    "solution": "USB UVC 相机直连 DGX/IPC",
+    "models": "Insta360 Link 2C、icSpring WebCamera、Jieli USB Camera",
+    "transport": "USB 3.x/UVC，DGX 最新帧队列推理",
+    "budget_cny": "已购设备，优先复用",
+    "latency": "本机采集通常最低；当前网页显示实测值",
+    "fit": "DGX 附近固定工位、验证与标注采集",
+    "decision": "当前三路已接入。量产时补充刚性支架、独立补光、锁曝光/白平衡和 USB 供电余量。"
+  }
+]

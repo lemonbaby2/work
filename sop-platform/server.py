@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import gzip
 import base64
 import csv
 import hashlib
@@ -11,6 +12,7 @@ import math
 import mimetypes
 import os
 import secrets
+import shlex
 import shutil
 import socket
 import sqlite3
@@ -62,6 +64,10 @@ ANNOTATION_IMAGE_ROOT = DESKTOP_ROOT / "标注图片"
 NETWORK_CAMERAS_PATH = ROOT / "config" / "network_cameras.json"
 CAMERA_SLOT_COUNT = max(1, int(os.getenv("SOP_CAMERA_COUNT", "8")))
 ANNOTATION_DB_PATH = Path(os.getenv("SOP_ANNOTATION_DB", str(RUNTIME_ROOT / "sop_annotations.sqlite3")))
+ANNOTATION_AUTOSAVE_ROOT = RUNTIME_ROOT / "annotation_autosave"
+ANNOTATION_VIDEO_CACHE_ROOT = RUNTIME_ROOT / "annotation_video_cache"
+CLOUD_INBOX_ROOT = RUNTIME_ROOT / "cloud_inbox"
+ANNOTATION_EXPORT_ROOT = RUNTIME_ROOT / "annotation_exports"
 ANNOTATION_DB_LOCK = threading.RLock()
 CAMERA_INFERENCE_GATE = threading.BoundedSemaphore(max(1, int(os.getenv("SOP_CAMERA_GPU_CONCURRENCY", "1"))))
 AUTH_SESSION_SECONDS = max(900, int(os.getenv("SOP_AUTH_SESSION_SECONDS", "28800")))
@@ -72,6 +78,17 @@ ROLE_VIEWS = {
     "manager": ["overview", "monitor", "decision", "studio", "annotation", "training", "mes", "quality"],
     "worker": ["overview", "monitor", "annotation"],
 }
+
+GOOGLE_SOURCE_FOLDER_URL = os.getenv("SOP_GOOGLE_SOURCE_URL", "").strip()
+GOOGLE_OUTPUT_FOLDER_URL = os.getenv("SOP_GOOGLE_OUTPUT_URL", "").strip()
+BAIDU_SOURCE_URL = os.getenv("SOP_BAIDU_SOURCE_URL", "").strip()
+CLOUD_SYNC_JOBS: dict[str, dict[str, object]] = {}
+CLOUD_SYNC_LOCK = threading.Lock()
+ANNOTATION_RENDER_JOBS: dict[str, dict[str, object]] = {}
+ANNOTATION_RENDER_LOCK = threading.Lock()
+AI_PRELABEL_STATUS_PATH = RUNTIME_ROOT / "ai_prelabel_status.json"
+AI_PRELABEL_LOCK = threading.Lock()
+AI_PRELABEL_PROCESS: subprocess.Popen | None = None
 
 
 def _password_hash(password: str, salt: bytes | None = None) -> str:
@@ -151,6 +168,14 @@ def initialize_annotation_db() -> None:
                 current_time REAL NOT NULL,
                 regions_json TEXT NOT NULL,
                 recorded_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ai_prelabel_frames (
+                video_id TEXT NOT NULL,
+                frame INTEGER NOT NULL,
+                detection_count INTEGER NOT NULL,
+                model_name TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(video_id, frame)
             );
             CREATE TABLE IF NOT EXISTS event_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -287,16 +312,22 @@ def db_upsert_annotation(annotation: dict) -> None:
         )
 
 
-def db_manual_annotations(video_id: str | None = None) -> list[dict]:
+def db_manual_annotations(video_id: str | None = None, frame: int | None = None) -> list[dict]:
     query = "SELECT payload_json FROM annotations"
-    params: tuple[object, ...] = ()
-    if video_id:
-        query += " WHERE video_id = ?"
-        params = (video_id,)
+    clauses: list[str] = []
+    params: list[object] = []
+    if video_id is not None:
+        clauses.append("video_id = ?")
+        params.append(video_id)
+    if frame is not None:
+        clauses.append("frame = ?")
+        params.append(frame)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY video_id, frame, annotation_id"
     with ANNOTATION_DB_LOCK, annotation_db() as connection:
         deleted = {str(row[0]) for row in connection.execute("SELECT annotation_id FROM annotation_deletions")}
-        return [item for item in (json.loads(row["payload_json"]) for row in connection.execute(query, params)) if str(item.get("annotation_id")) not in deleted]
+        return [item for item in (json.loads(row["payload_json"]) for row in connection.execute(query, tuple(params))) if str(item.get("annotation_id")) not in deleted]
 
 
 def db_deleted_annotation_ids() -> set[str]:
@@ -317,7 +348,7 @@ def db_delete_annotations(annotation_ids: list[str], deleted_by: str, reason: st
                 "SELECT video_id, track_id, source_kind, payload_json FROM annotations WHERE annotation_id = ?",
                 (annotation_id,),
             ).fetchone()
-            if row is None or row["source_kind"] != "manual":
+            if row is None:
                 skipped.append(annotation_id)
                 continue
             payload = json.loads(row["payload_json"])
@@ -339,6 +370,38 @@ def db_delete_annotations(annotation_ids: list[str], deleted_by: str, reason: st
     return {"deleted": deleted, "deleted_count": len(deleted), "skipped": skipped}
 
 
+def db_delete_generated_annotation(annotation: dict, deleted_by: str, reason: str = "人工删除AI候选框") -> dict[str, object]:
+    annotation_id = str(annotation.get("annotation_id") or "").strip()
+    source_kind = str(annotation.get("source_kind") or "")
+    if not annotation_id or source_kind not in {"prelabel", "candidate"}:
+        raise ValueError("只能删除存在的AI预标注或小目标候选框")
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    tombstone = {
+        "annotation_id": annotation_id,
+        "video_id": str(annotation.get("video_id") or ""),
+        "track_id": annotation.get("track_id"),
+        "source_kind": source_kind,
+        "deleted_by": deleted_by,
+        "reason": reason,
+        "deleted_at": now,
+    }
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO annotation_deletions VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                annotation_id,
+                tombstone["video_id"],
+                tombstone["track_id"],
+                deleted_by,
+                reason,
+                json.dumps({**annotation, **tombstone}, ensure_ascii=False),
+                now,
+            ),
+        )
+        connection.execute("DELETE FROM annotation_reviews WHERE annotation_id = ?", (annotation_id,))
+    return {"deleted": [tombstone], "deleted_count": 1, "skipped": []}
+
+
 def db_delete_track(video_id: str, track_id: str, deleted_by: str) -> dict[str, object]:
     with ANNOTATION_DB_LOCK, annotation_db() as connection:
         ids = [str(row[0]) for row in connection.execute(
@@ -348,6 +411,19 @@ def db_delete_track(video_id: str, track_id: str, deleted_by: str) -> dict[str, 
     if not ids:
         raise ValueError("该轨迹没有可删除的人工标注")
     return db_delete_annotations(ids, deleted_by, "删除整条轨迹")
+
+
+def db_delete_track_segment(video_id: str, track_id: str, start_frame: int, end_frame: int, deleted_by: str) -> dict[str, object]:
+    if start_frame < 0 or end_frame < start_frame:
+        raise ValueError("轨迹删除区间无效")
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        ids = [str(row[0]) for row in connection.execute(
+            """SELECT annotation_id FROM annotations
+               WHERE video_id = ? AND track_id = ? AND source_kind = 'manual'
+                 AND frame BETWEEN ? AND ? ORDER BY frame""",
+            (video_id, track_id, start_frame, end_frame),
+        )]
+    return db_delete_annotations(ids, deleted_by, f"删除轨迹区间 {start_frame}-{end_frame} 帧")
 
 
 def db_annotation_tracks(video_id: str) -> list[dict[str, object]]:
@@ -362,23 +438,35 @@ def db_annotation_tracks(video_id: str) -> list[dict[str, object]]:
         ))
         results = []
         for row in rows:
-            frames = [int(item[0]) for item in connection.execute(
-                "SELECT frame FROM annotations WHERE video_id = ? AND track_id = ? ORDER BY frame LIMIT 240",
+            shape_rows = list(connection.execute(
+                "SELECT frame, payload_json FROM annotations WHERE video_id = ? AND track_id = ? ORDER BY frame LIMIT 2000",
                 (video_id, row["track_id"]),
-            )]
-            results.append({**dict(row), "frames": frames})
+            ))
+            shapes = []
+            for shape_row in shape_rows:
+                payload = json.loads(shape_row["payload_json"])
+                shapes.append({
+                    "frame": int(shape_row["frame"]),
+                    "box": payload.get("box"),
+                    "annotation_id": payload.get("annotation_id"),
+                    "tracking_method": payload.get("tracking_method"),
+                    "tracking_confidence": payload.get("tracking_confidence"),
+                })
+            results.append({**dict(row), "frames": [item["frame"] for item in shapes], "shapes": shapes})
     return results
 
 
 def annotation_scope() -> dict[str, object]:
     default = {
         "station_name": "PCB固定工位",
+        "station_type": "assembly",
         "quality_goal": "确认取料、插装位置和工序是否正确",
         "material_a": "二极管插件",
         "material_b": "其他插件",
         "distinguish_materials": True,
         "required_labels": ["PCB板", "操作人员手部", "物料框", "手持插件", "插件位置"],
         "excluded_labels": ["逐个电容", "逐个电阻", "与本工位质量目标无关的元件"],
+        "verification_points": ["步骤顺序", "手势与操作模式", "装配内容", "标签信息"],
         "policy": "只标注能判断本工位取料、插装位置和工序正确性的目标。只有当不同插件会影响工艺判定时才分类。",
     }
     saved = read_config(ANNOTATION_SCOPE_PATH, {})
@@ -387,7 +475,7 @@ def annotation_scope() -> dict[str, object]:
 
 def save_annotation_scope(payload: dict[str, object]) -> dict[str, object]:
     current = annotation_scope()
-    allowed = {"station_name", "quality_goal", "material_a", "material_b", "distinguish_materials", "required_labels", "excluded_labels", "policy"}
+    allowed = {"station_name", "station_type", "quality_goal", "material_a", "material_b", "distinguish_materials", "required_labels", "excluded_labels", "verification_points", "policy"}
     scope = {**current, **{key: payload[key] for key in allowed if key in payload}}
     if not str(scope.get("station_name") or "").strip() or not str(scope.get("quality_goal") or "").strip():
         raise ValueError("工位名称和质量判定目标不能为空")
@@ -417,6 +505,101 @@ def db_save_review(review: dict) -> None:
         )
 
 
+def atomic_write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(f"{path.suffix}.{secrets.token_hex(6)}.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def atomic_write_gzip_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{time.time_ns()}.tmp")
+    with gzip.open(temporary, "wt", encoding="utf-8", compresslevel=6) as handle:
+        json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
+    temporary.replace(path)
+
+
+def cache_annotation_video(video_id: str) -> dict[str, object]:
+    source = annotation_video_path(video_id)
+    ANNOTATION_VIDEO_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    safe_video_id = "".join(character if character.isalnum() or character in "-_." else "-" for character in video_id)
+    destination = ANNOTATION_VIDEO_CACHE_ROOT / f"{safe_video_id}_{source.name}"
+    cache_mode = "hardlink"
+    if not destination.exists() or destination.stat().st_size != source.stat().st_size:
+        destination.unlink(missing_ok=True)
+        try:
+            os.link(source, destination)
+        except OSError:
+            destination.symlink_to(source)
+            cache_mode = "symlink"
+    elif destination.is_symlink():
+        cache_mode = "symlink"
+    return {
+        "source": str(source),
+        "path": str(destination),
+        "mode": cache_mode,
+        "size_bytes": source.stat().st_size,
+    }
+
+
+def save_annotation_draft(
+    payload: dict,
+    checkpoint_id: str,
+    recorded_at: str,
+    annotations: list[dict],
+) -> dict[str, object]:
+    video_id = str(payload.get("video_id") or "").strip()
+    draft = payload.get("draft") if isinstance(payload.get("draft"), dict) else None
+    snapshot = {
+        "schema_version": 2,
+        "checkpoint_id": checkpoint_id,
+        "video_id": video_id,
+        "current_time": float(payload.get("current_time", 0)),
+        "current_frame": int(payload.get("current_frame", 0)),
+        "draft": draft,
+        "annotation_count": len(annotations),
+        "annotations": annotations,
+        "recorded_at": recorded_at,
+    }
+    video_root = ANNOTATION_AUTOSAVE_ROOT / video_id
+    summary = {key: value for key, value in snapshot.items() if key != "annotations"}
+    atomic_write_json(video_root / "latest.json", summary)
+    history_path = video_root / "history" / f"{checkpoint_id}.json.gz"
+    atomic_write_gzip_json(history_path, snapshot)
+    history = sorted((video_root / "history").glob("*.json*"), key=lambda path: path.stat().st_mtime, reverse=True)
+    for stale in history[120:]:
+        stale.unlink(missing_ok=True)
+    return summary
+
+
+def annotation_checkpoint_snapshot(video_id: str, checkpoint_id: str) -> dict[str, object] | None:
+    if not checkpoint_id or Path(checkpoint_id).name != checkpoint_id:
+        return None
+    compressed_path = ANNOTATION_AUTOSAVE_ROOT / video_id / "history" / f"{checkpoint_id}.json.gz"
+    legacy_path = ANNOTATION_AUTOSAVE_ROOT / video_id / "history" / f"{checkpoint_id}.json"
+    try:
+        if compressed_path.is_file():
+            with gzip.open(compressed_path, "rt", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        else:
+            payload = json.loads(legacy_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("video_id") != video_id or payload.get("checkpoint_id") != checkpoint_id:
+        return None
+    return payload
+
+
+def latest_annotation_draft(video_id: str) -> dict[str, object] | None:
+    path = ANNOTATION_AUTOSAVE_ROOT / video_id / "latest.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def db_checkpoint(payload: dict) -> dict:
     video_id = str(payload.get("video_id") or "")
     if not video_id:
@@ -424,7 +607,12 @@ def db_checkpoint(payload: dict) -> dict:
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     checkpoint_id = f"SAVE-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}"
     with ANNOTATION_DB_LOCK, annotation_db() as connection:
-        count = int(connection.execute("SELECT COUNT(*) FROM annotations WHERE video_id = ?", (video_id,)).fetchone()[0])
+        annotation_rows = list(connection.execute(
+            "SELECT payload_json FROM annotations WHERE video_id = ? ORDER BY frame, annotation_id",
+            (video_id,),
+        ))
+        annotations = [json.loads(row["payload_json"]) for row in annotation_rows]
+        count = len(annotations)
         regions = [row[0] for row in connection.execute("SELECT DISTINCT region FROM annotations WHERE video_id = ? ORDER BY region", (video_id,))]
         connection.execute(
             "INSERT INTO annotation_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -439,7 +627,9 @@ def db_checkpoint(payload: dict) -> dict:
     with ANNOTATION_DB_LOCK, annotation_db() as source, sqlite3.connect(temporary) as target:
         source.backup(target)
     temporary.replace(destination)
-    return {"checkpoint_id": checkpoint_id, "video_id": video_id, "annotation_count": count, "regions": regions, "recorded_at": now, "backup": str(destination)}
+    video_cache = cache_annotation_video(video_id)
+    autosave = save_annotation_draft(payload, checkpoint_id, now, annotations)
+    return {"checkpoint_id": checkpoint_id, "video_id": video_id, "annotation_count": count, "regions": regions, "recorded_at": now, "backup": str(destination), "video_cache": video_cache, "autosave": autosave}
 
 
 def annotation_db_health() -> dict:
@@ -724,14 +914,21 @@ def device_inventory() -> dict[str, object]:
         configured_names = {str(item.get("url")): str(item.get("name") or "网络摄像头") for item in json.loads(NETWORK_CAMERAS_PATH.read_text(encoding="utf-8")) if isinstance(item, dict)} if NETWORK_CAMERAS_PATH.exists() else {}
     except (OSError, json.JSONDecodeError, TypeError):
         configured_names = {}
-    for camera_id, source in DEFAULT_CAMERA_SOURCES.items():
+    effective_sources = {
+        camera_id: os.getenv(f"SOP_CAMERA_SOURCE_{camera_id}") or DEFAULT_CAMERA_SOURCES.get(camera_id, "")
+        for camera_id in range(CAMERA_SLOT_COUNT)
+    }
+    for camera_id, source in effective_sources.items():
+        if not source:
+            continue
         try:
             resolved = str(Path(source).resolve())
         except OSError:
             resolved = source
         matched = next((item for item in videos if item.get("device") == resolved), None)
         is_network = str(source).startswith(("rtsp://", "rtsps://", "http://", "https://"))
-        camera_sources.append({"camera_id": camera_id, "camera_name": matched.get("name") if matched else configured_names.get(str(source), f"摄像头{camera_id}"), "source": source, "transport": "network" if is_network else "usb"})
+        camera_name = os.getenv(f"SOP_CAMERA_NAME_{camera_id}") or (matched.get("name") if matched else configured_names.get(str(source), f"摄像头{camera_id}"))
+        camera_sources.append({"camera_id": camera_id, "camera_name": camera_name, "source": source, "transport": "network" if is_network else "usb"})
     return {
         "ok": True,
         "host": socket.gethostname(),
@@ -780,6 +977,7 @@ class LiveCameraService:
         if configured_source is None and self.camera_id == 0:
             configured_source = os.getenv("SOP_CAMERA_SOURCE")
         self.source = configured_source or DEFAULT_CAMERA_SOURCES.get(self.camera_id, "")
+        self.camera_name = os.getenv(f"SOP_CAMERA_NAME_{self.camera_id}", f"摄像头{self.camera_id}")
         default_model = LINE_MODEL_PATHS.get(ACTIVE_LINE_ID, ROOT / "models" / "yolo11n.pt")
         self.model_path = Path(os.getenv("SOP_CAMERA_MODEL", str(default_model)))
         self.device = os.getenv("SOP_CAMERA_DEVICE", "0")
@@ -827,7 +1025,7 @@ class LiveCameraService:
             "running": False,
             "model": self.model_path.stem,
             "camera_id": self.camera_id,
-            "camera_name": f"摄像头{self.camera_id}",
+            "camera_name": self.camera_name,
             "model_path": str(self.model_path),
             "source": self.source,
             "pixel_format": "MJPG",
@@ -1304,7 +1502,8 @@ def refresh_camera_services() -> dict[int, str]:
             configured = os.getenv(f"SOP_CAMERA_SOURCE_{camera_id}")
             source = configured or discovered.get(camera_id, "")
             service.source = source
-            service._status.update({"source": source, "error": None if source else "摄像头槽位尚未绑定设备"})
+            service.camera_name = os.getenv(f"SOP_CAMERA_NAME_{camera_id}", f"摄像头{camera_id}")
+            service._status.update({"source": source, "camera_name": service.camera_name, "error": None if source else "摄像头槽位尚未绑定设备"})
     return discovered
 
 
@@ -1448,10 +1647,170 @@ def cvat_bulk_status() -> dict[str, object]:
 
 def probe_url(url: str) -> bool:
     try:
-        with build_opener(ProxyHandler({})).open(url, timeout=0.8) as response:
+        with build_opener(ProxyHandler({})).open(url, timeout=4.0) as response:
             return 200 <= response.status < 500
     except Exception:
         return False
+
+
+def _process_is_running(pid: object) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def ai_prelabel_status() -> dict[str, object]:
+    status = read_config(AI_PRELABEL_STATUS_PATH, {})
+    videos = video_catalog().get("videos", [])
+    available = []
+    missing_video_ids = []
+    for item in videos:
+        try:
+            annotation_video_path(str(item.get("id")))
+            available.append(item)
+        except ValueError:
+            missing_video_ids.append(str(item.get("id")))
+    total = sum((max(0, int(item.get("frames") or 0) - 1) // 5) + 1 for item in available)
+    with ANNOTATION_DB_LOCK, annotation_db() as connection:
+        completed = int(connection.execute("SELECT COUNT(*) FROM ai_prelabel_frames").fetchone()[0])
+        detections = int(connection.execute("SELECT COALESCE(SUM(detection_count), 0) FROM ai_prelabel_frames").fetchone()[0])
+    running = _process_is_running(status.get("pid"))
+    state_name = str(status.get("status") or "not_started")
+    if state_name in {"running", "loading_model", "queued"} and not running:
+        state_name = "interrupted"
+    return {
+        **status,
+        "ok": True,
+        "status": state_name,
+        "running": running,
+        "stride": 5,
+        "videos_total": len(videos),
+        "videos_available": len(available),
+        "missing_video_ids": missing_video_ids,
+        "sampled_frames_total": total,
+        "sampled_frames_completed": completed,
+        "detections_total": detections,
+        "progress": round(min(100, completed * 100 / max(1, total)), 2),
+        "truth_policy": "AI框均为待人工复核候选；开放词汇不能保证识别未知物体，漏检须人工补框。",
+    }
+
+
+def control_ai_prelabel(action: str, operator: str) -> dict[str, object]:
+    global AI_PRELABEL_PROCESS
+    if action not in {"start", "pause", "resume"}:
+        raise ValueError("AI预标注操作无效")
+    with AI_PRELABEL_LOCK:
+        status = ai_prelabel_status()
+        if action == "pause":
+            if not status["running"]:
+                raise ValueError("AI预标注任务当前没有运行")
+            atomic_write_json(AI_PRELABEL_STATUS_PATH, {**status, "control": "pause", "message": "正在完成当前批次后暂停", "operator": operator})
+            return ai_prelabel_status()
+        if status["running"]:
+            return status
+        log_path = RUNTIME_ROOT / "ai_prelabel.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = log_path.open("ab", buffering=0)
+        command = [sys.executable, str(ROOT / "scripts" / "prelabel_all_videos.py"), "--stride", "5"]
+        AI_PRELABEL_PROCESS = subprocess.Popen(command, cwd=str(ROOT), stdout=log_handle, stderr=subprocess.STDOUT)
+        queued = {
+            **status,
+            "status": "queued",
+            "control": "run",
+            "pid": AI_PRELABEL_PROCESS.pid,
+            "operator": operator,
+            "message": "AI预标注任务已启动，正在加载模型",
+            "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        atomic_write_json(AI_PRELABEL_STATUS_PATH, queued)
+        return ai_prelabel_status()
+
+
+def cloud_sync_status() -> dict[str, object]:
+    with CLOUD_SYNC_LOCK:
+        jobs = sorted(CLOUD_SYNC_JOBS.values(), key=lambda item: str(item.get("created_at", "")), reverse=True)[:20]
+    latest_exports = sorted(ANNOTATION_EXPORT_ROOT.glob("*.mp4"), key=lambda path: path.stat().st_mtime, reverse=True) if ANNOTATION_EXPORT_ROOT.exists() else []
+    cached_files = [path for path in CLOUD_INBOX_ROOT.rglob("*") if path.is_file()] if CLOUD_INBOX_ROOT.exists() else []
+    return {
+        "ok": True,
+        "google": {
+            "source_url": GOOGLE_SOURCE_FOLDER_URL,
+            "output_url": GOOGLE_OUTPUT_FOLDER_URL,
+            "rclone_installed": bool(which("rclone")),
+            "source_configured": bool(which("rclone") and os.getenv("SOP_GOOGLE_SOURCE", "").strip()),
+            "output_configured": bool(which("rclone") and os.getenv("SOP_GOOGLE_OUTPUT", "").strip()),
+        },
+        "baidu": {
+            "source_url": BAIDU_SOURCE_URL,
+            "configured": bool(os.getenv("SOP_BAIDU_SYNC_COMMAND", "").strip()),
+            "upload_configured": bool(os.getenv("SOP_BAIDU_UPLOAD_COMMAND", "").strip()),
+        },
+        "local": {
+            "inbox": str(CLOUD_INBOX_ROOT), "cached_files": len(cached_files),
+            "video_cache": str(ANNOTATION_VIDEO_CACHE_ROOT),
+            "latest_export": str(latest_exports[0]) if latest_exports else None,
+            "exports": len(latest_exports),
+        },
+        "jobs": jobs,
+        "security": "网盘仅使用服务器侧 OAuth/rclone 令牌；账号密码不会写入网页、源码或日志。",
+    }
+
+
+def _update_cloud_job(job_id: str, **values: object) -> None:
+    with CLOUD_SYNC_LOCK:
+        CLOUD_SYNC_JOBS.setdefault(job_id, {}).update(values)
+
+
+def run_cloud_sync_job(job_id: str, action: str) -> None:
+    try:
+        CLOUD_INBOX_ROOT.mkdir(parents=True, exist_ok=True)
+        if action == "pull_google":
+            remote = os.getenv("SOP_GOOGLE_SOURCE", "").strip()
+            if not which("rclone") or not remote:
+                raise RuntimeError("Google Drive 尚未完成 rclone OAuth 和 SOP_GOOGLE_SOURCE 配置")
+            command = ["rclone", "copy", remote, str(CLOUD_INBOX_ROOT / "google"), "--create-empty-src-dirs"]
+        elif action == "push_google":
+            remote = os.getenv("SOP_GOOGLE_OUTPUT", "").strip()
+            if not which("rclone") or not remote:
+                raise RuntimeError("Google Drive 尚未完成 rclone OAuth 和 SOP_GOOGLE_OUTPUT 配置")
+            exports = list(ANNOTATION_EXPORT_ROOT.glob("*.mp4")) if ANNOTATION_EXPORT_ROOT.exists() else []
+            if not exports:
+                raise RuntimeError("尚无标注成片，请先点击“生成标注成片”")
+            command = ["rclone", "copy", str(ANNOTATION_EXPORT_ROOT), remote, "--include", "*.mp4", "--include", "*.json"]
+        elif action == "pull_baidu":
+            configured = os.getenv("SOP_BAIDU_SYNC_COMMAND", "").strip()
+            if not configured:
+                raise RuntimeError("百度网盘同步器尚未授权；请先配置 SOP_BAIDU_SYNC_COMMAND")
+            command = [part.replace("{destination}", str(CLOUD_INBOX_ROOT / "baidu")) for part in shlex.split(configured)]
+        elif action == "push_baidu":
+            configured = os.getenv("SOP_BAIDU_UPLOAD_COMMAND", "").strip()
+            if not configured:
+                raise RuntimeError("百度网盘上传器尚未授权；请先配置 SOP_BAIDU_UPLOAD_COMMAND")
+            exports = list(ANNOTATION_EXPORT_ROOT.glob("*.mp4")) if ANNOTATION_EXPORT_ROOT.exists() else []
+            if not exports:
+                raise RuntimeError("尚无标注成片，请先点击“生成标注成片”")
+            command = [part.replace("{source}", str(ANNOTATION_EXPORT_ROOT)) for part in shlex.split(configured)]
+        else:
+            raise RuntimeError("不支持的云盘同步操作")
+        _update_cloud_job(job_id, status="running", message="同步进行中")
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=7200, check=False)
+        if completed.returncode:
+            raise RuntimeError((completed.stderr or completed.stdout or "同步失败")[-1200:])
+        imported = ingest_cloud_videos() if action.startswith("pull_") else []
+        _update_cloud_job(job_id, status="completed", finished_at=time.strftime("%Y-%m-%d %H:%M:%S"), message=f"同步完成，当前云盘视频 {len(imported)} 段")
+    except Exception as exc:
+        _update_cloud_job(job_id, status="failed", finished_at=time.strftime("%Y-%m-%d %H:%M:%S"), message=str(exc))
+
+
+def start_cloud_sync(action: str, operator: str) -> dict[str, object]:
+    job_id = f"CLOUD-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}"
+    job = {"job_id": job_id, "action": action, "operator": operator, "status": "queued", "message": "等待同步", "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    with CLOUD_SYNC_LOCK:
+        CLOUD_SYNC_JOBS[job_id] = job
+    threading.Thread(target=run_cloud_sync_job, args=(job_id, action), daemon=True, name=job_id).start()
+    return job
 
 
 def cvat_task_create(payload: dict[str, object]) -> dict[str, object]:
@@ -1507,6 +1866,65 @@ def cvat_task_create(payload: dict[str, object]) -> dict[str, object]:
                     status = "任务已创建/视频上传失败"
                     message = f"CVAT任务已创建，但整段视频上传失败: {exc}"
     return {"ok": True, "mode": "api", "task_id": task_id, "url": f"{url}/tasks/{task_id}", "status": status, "message": message}
+
+
+def cvat_push_annotations(task_id: int, video_id: str) -> dict[str, object]:
+    token = cvat_token()
+    if not token:
+        raise ValueError("CVAT 尚未配置接口令牌")
+    if video_info(video_id) is None:
+        raise ValueError("视频不存在")
+    try:
+        import requests
+    except ImportError as exc:
+        raise RuntimeError("缺少 CVAT 同步依赖 requests") from exc
+    api_url = str(cvat_config()["api_url"])
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+    labels_response = requests.get(
+        f"{api_url}/api/labels", headers=headers, params={"task_id": task_id, "page_size": 1000}, timeout=20,
+    )
+    labels_response.raise_for_status()
+    label_payload = labels_response.json()
+    labels = label_payload.get("results", []) if isinstance(label_payload, dict) else label_payload
+    label_ids = {str(item.get("name")): int(item["id"]) for item in labels if item.get("id") is not None}
+    width, height = video_size(video_id)
+    source_items = [
+        item for item in manual_annotation_items(video_id)
+        if item.get("review_status") != "rejected" and item.get("label") in label_ids
+    ]
+    shapes = []
+    for item in source_items:
+        x1, y1, x2, y2 = [float(value) for value in item.get("box", [0, 0, 0, 0])]
+        shapes.append({
+            "type": "rectangle",
+            "frame": int(item.get("frame", 0)),
+            "label_id": label_ids[str(item["label"])],
+            "points": [round(x1 * width, 2), round(y1 * height, 2), round(x2 * width, 2), round(y2 * height, 2)],
+            "occluded": False,
+            "outside": False,
+            "z_order": 0,
+            "rotation": 0,
+            "attributes": [],
+            "source": "auto" if item.get("source_kind") in {"prelabel", "candidate"} else "manual",
+        })
+    response = requests.put(
+        f"{api_url}/api/tasks/{task_id}/annotations",
+        headers=headers,
+        json={"version": 0, "tags": [], "shapes": shapes, "tracks": []},
+        timeout=120,
+    )
+    response.raise_for_status()
+    total = len(manual_annotation_items(video_id))
+    return {
+        "ok": True,
+        "task_id": task_id,
+        "video_id": video_id,
+        "uploaded": len(shapes),
+        "skipped": max(0, total - len(shapes)),
+        "labels_available": sorted(label_ids),
+        "url": f"{cvat_config()['url']}/tasks/{task_id}",
+        "message": f"已把 {len(shapes)} 个框保存到 CVAT 任务 #{task_id}",
+    }
 
 
 def production_lines() -> list[dict[str, object]]:
@@ -1758,7 +2176,71 @@ def camera_service(camera_id: int) -> LiveCameraService:
 
 
 def video_catalog() -> dict:
-    return json.loads((DATA_ROOT / "videos.json").read_text(encoding="utf-8"))
+    catalog = json.loads((DATA_ROOT / "videos.json").read_text(encoding="utf-8"))
+    cloud_manifest = read_config(RUNTIME_ROOT / "cloud_video_catalog.json", {"videos": []})
+    cloud_videos = cloud_manifest.get("videos", []) if isinstance(cloud_manifest, dict) else []
+    known_ids = {str(item.get("id")) for item in catalog.get("videos", [])}
+    additions = [item for item in cloud_videos if str(item.get("id")) not in known_ids]
+    if additions:
+        catalog["videos"] = [*catalog.get("videos", []), *additions]
+        totals = catalog.setdefault("totals", {})
+        totals["videos"] = len(catalog["videos"])
+        totals["duration_s"] = round(sum(float(item.get("duration_s", 0)) for item in catalog["videos"]), 2)
+        totals["frames"] = sum(int(item.get("frames", 0)) for item in catalog["videos"])
+        totals["steps"] = sum(len(item.get("steps", [])) for item in catalog["videos"])
+    return catalog
+
+
+def ingest_cloud_videos() -> list[dict[str, object]]:
+    try:
+        import cv2
+    except ImportError as exc:
+        raise RuntimeError("加载云盘视频需要 opencv-python") from exc
+    media_root = WEB_ROOT / "media" / "cloud"
+    media_root.mkdir(parents=True, exist_ok=True)
+    existing = read_config(RUNTIME_ROOT / "cloud_video_catalog.json", {"videos": []})
+    existing_items = existing.get("videos", []) if isinstance(existing, dict) else []
+    by_source = {str(item.get("cloud_source")): item for item in existing_items}
+    supported = {".mp4", ".mov", ".mkv", ".avi", ".m4v"}
+    for source in sorted(CLOUD_INBOX_ROOT.rglob("*")) if CLOUD_INBOX_ROOT.exists() else []:
+        if not source.is_file() or source.suffix.lower() not in supported:
+            continue
+        source_key = str(source.resolve())
+        if source_key in by_source:
+            continue
+        digest = hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:12]
+        destination = media_root / f"{digest}_{source.name}"
+        if not destination.exists():
+            try:
+                os.link(source, destination)
+            except OSError:
+                shutil.copy2(source, destination)
+        capture = cv2.VideoCapture(str(destination))
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 30)
+        frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 1280)
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
+        capture.release()
+        duration = frames / fps if fps > 0 else 0
+        boundaries = [0.0, duration * 0.2, duration * 0.5, duration * 0.82, duration]
+        labels = ["取料与准备流程", "对位、插电或上料流程", "装配、测试、烧录或紧固流程", "标签与完成复核"]
+        steps = [
+            {"id": f"S{index + 1:02d}", "label": label, "start_s": round(boundaries[index], 3), "end_s": round(boundaries[index + 1], 3), "roi": [0.05, 0.05, 0.95, 0.95]}
+            for index, label in enumerate(labels)
+        ]
+        relative = str(destination.relative_to(WEB_ROOT))
+        item = {
+            "id": f"video_cloud_{digest}", "display_name": f"每日云盘视频｜{source.name}",
+            "video": relative, "source_video": relative, "presentation_video": relative,
+            "duration_s": round(duration, 3), "fps": round(fps, 3), "frames": frames,
+            "resolution": f"{width}x{height}", "presentation_resolution": f"{width}x{height}",
+            "algorithm": "待标注 · 流程优先", "steps": steps, "cloud_source": source_key,
+            "truth_policy": "云盘新视频需先核对流程、手势、测试屏幕、烧录/插电、标签和紧固步骤。",
+        }
+        by_source[source_key] = item
+    videos = sorted(by_source.values(), key=lambda item: str(item.get("cloud_source")))
+    atomic_write_json(RUNTIME_ROOT / "cloud_video_catalog.json", {"videos": videos, "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+    return videos
 
 
 def frame_records(video_id: str, kind: str = "detections") -> list[dict]:
@@ -1851,6 +2333,258 @@ def normalize_box(box: object, video_id: str) -> tuple[list[float], list[float]]
     return [round(value, 6) for value in normalized], pixels
 
 
+def annotation_video_path(video_id: str) -> Path:
+    info = video_info(video_id)
+    if info is None:
+        raise ValueError("视频不存在")
+    candidates = []
+    for key in ("source_video", "video"):
+        value = str(info.get(key) or "").strip()
+        if value:
+            candidates.append(WEB_ROOT / value)
+    source = str(info.get("source") or "").strip()
+    if source:
+        candidates.append(Path(source))
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        if resolved.is_file():
+            return resolved
+    raise ValueError("找不到该视频的原始文件，无法执行自动跟踪")
+
+
+def _bounded_tracking_box(box: list[float], width: int, height: int) -> list[float]:
+    x1, y1, x2, y2 = box
+    x1 = min(float(width - 2), max(0.0, x1))
+    y1 = min(float(height - 2), max(0.0, y1))
+    x2 = min(float(width), max(x1 + 2.0, x2))
+    y2 = min(float(height), max(y1 + 2.0, y2))
+    return [x1, y1, x2, y2]
+
+
+def track_video_box(
+    video_id: str,
+    start_frame: int,
+    end_frame: int,
+    start_box: list[float],
+    output_frames: list[int],
+    end_box: list[float] | None = None,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Track one normalized box through real video frames using LK flow with template fallback."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError("自动跟踪需要安装 opencv-python 和 numpy") from exc
+
+    video_path = annotation_video_path(video_id)
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise ValueError(f"无法读取跟踪视频: {video_path.name}")
+    capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    ok, first_frame = capture.read()
+    if not ok or first_frame is None:
+        capture.release()
+        raise ValueError(f"无法读取起始帧 {start_frame}")
+
+    source_height, source_width = first_frame.shape[:2]
+    analysis_scale = min(1.0, 960.0 / max(source_width, source_height))
+    analysis_width = max(2, int(round(source_width * analysis_scale)))
+    analysis_height = max(2, int(round(source_height * analysis_scale)))
+
+    def analysis_frame(frame):
+        if analysis_scale < 0.999:
+            frame = cv2.resize(frame, (analysis_width, analysis_height), interpolation=cv2.INTER_AREA)
+        return frame
+
+    def gray_frame(frame):
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    def feature_points(gray, box):
+        mask = np.zeros(gray.shape, dtype=np.uint8)
+        x1, y1, x2, y2 = [int(round(value)) for value in box]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(gray.shape[1], x2), min(gray.shape[0], y2)
+        if x2 - x1 < 4 or y2 - y1 < 4:
+            return None
+        mask[y1:y2, x1:x2] = 255
+        return cv2.goodFeaturesToTrack(
+            gray, mask=mask, maxCorners=100, qualityLevel=0.008,
+            minDistance=3, blockSize=3,
+        )
+
+    def template_update(previous, current, box):
+        x1, y1, x2, y2 = [int(round(value)) for value in box]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(previous.shape[1], x2), min(previous.shape[0], y2)
+        template = previous[y1:y2, x1:x2]
+        if template.shape[0] < 4 or template.shape[1] < 4:
+            return None, 0.0
+        margin_x = max(16, int(template.shape[1] * 0.7))
+        margin_y = max(16, int(template.shape[0] * 0.7))
+        sx1, sy1 = max(0, x1 - margin_x), max(0, y1 - margin_y)
+        sx2 = min(current.shape[1], x2 + margin_x)
+        sy2 = min(current.shape[0], y2 + margin_y)
+        search = current[sy1:sy2, sx1:sx2]
+        if search.shape[0] < template.shape[0] or search.shape[1] < template.shape[1]:
+            return None, 0.0
+        scores = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
+        _, maximum, _, location = cv2.minMaxLoc(scores)
+        next_x1, next_y1 = sx1 + location[0], sy1 + location[1]
+        return [next_x1, next_y1, next_x1 + template.shape[1], next_y1 + template.shape[0]], float(maximum)
+
+    previous_analysis = analysis_frame(first_frame)
+    previous_gray = gray_frame(previous_analysis)
+    current_box = _bounded_tracking_box(
+        [
+            start_box[0] * analysis_width,
+            start_box[1] * analysis_height,
+            start_box[2] * analysis_width,
+            start_box[3] * analysis_height,
+        ],
+        analysis_width,
+        analysis_height,
+    )
+    requested = set(output_frames)
+    results = [{"frame": start_frame, "box": list(start_box), "confidence": 1.0, "method": "keyframe"}]
+    method_counts = {"optical_flow": 0, "optical_flow+template": 0, "template": 0, "hold": 0}
+    confidence_total = 1.0
+
+    try:
+        for frame_index in range(start_frame + 1, end_frame + 1):
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                raise ValueError(f"视频在第 {frame_index} 帧前结束，未能完成自动跟踪")
+            current_analysis = analysis_frame(frame)
+            current_gray = gray_frame(current_analysis)
+            points = feature_points(previous_gray, current_box)
+            next_box = None
+            confidence = 0.0
+            method = "hold"
+            if points is not None and len(points) >= 4:
+                moved, status, errors = cv2.calcOpticalFlowPyrLK(
+                    previous_gray,
+                    current_gray,
+                    points,
+                    None,
+                    winSize=(31, 31),
+                    maxLevel=3,
+                    criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 24, 0.01),
+                )
+                if moved is not None and status is not None:
+                    valid = status.reshape(-1) == 1
+                    if errors is not None:
+                        valid &= errors.reshape(-1) < 45.0
+                    before = points.reshape(-1, 2)[valid]
+                    after = moved.reshape(-1, 2)[valid]
+                    if len(before) >= 4:
+                        transform, inliers = cv2.estimateAffinePartial2D(
+                            before,
+                            after,
+                            method=cv2.RANSAC,
+                            ransacReprojThreshold=3.0,
+                            maxIters=300,
+                            confidence=0.97,
+                        )
+                        if transform is not None:
+                            x1, y1, x2, y2 = current_box
+                            old_width, old_height = x2 - x1, y2 - y1
+                            old_center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                            transformed_center = cv2.transform(np.array([[[old_center[0], old_center[1]]]], dtype=np.float32), transform)[0][0]
+                            raw_scale = math.hypot(float(transform[0, 0]), float(transform[0, 1]))
+                            # Partial affine rotation must not inflate an axis-aligned box. Apply only a
+                            # damped isotropic scale; user end keyframes handle genuine shape changes.
+                            frame_scale = 1.0 + (min(1.06, max(0.94, raw_scale)) - 1.0) * 0.35
+                            new_width, new_height = old_width * frame_scale, old_height * frame_scale
+                            candidate = [
+                                float(transformed_center[0] - new_width / 2),
+                                float(transformed_center[1] - new_height / 2),
+                                float(transformed_center[0] + new_width / 2),
+                                float(transformed_center[1] + new_height / 2),
+                            ]
+                            new_center = ((candidate[0] + candidate[2]) / 2, (candidate[1] + candidate[3]) / 2)
+                            movement = math.hypot(new_center[0] - old_center[0], new_center[1] - old_center[1])
+                            size_ok = 0.75 <= raw_scale <= 1.3
+                            movement_ok = movement <= max(32.0, max(old_width, old_height) * 1.2)
+                            if size_ok and movement_ok:
+                                next_box = candidate
+                                confidence = float(inliers.mean()) if inliers is not None else min(1.0, len(before) / 12.0)
+                                method = "optical_flow"
+            template_candidate, template_confidence = template_update(previous_gray, current_gray, current_box)
+            if next_box is not None and template_candidate is not None and template_confidence >= 0.35:
+                optical_width, optical_height = next_box[2] - next_box[0], next_box[3] - next_box[1]
+                optical_center = ((next_box[0] + next_box[2]) / 2, (next_box[1] + next_box[3]) / 2)
+                template_center = ((template_candidate[0] + template_candidate[2]) / 2, (template_candidate[1] + template_candidate[3]) / 2)
+                blend = min(0.45, max(0.15, template_confidence * 0.4))
+                center_x = optical_center[0] * (1 - blend) + template_center[0] * blend
+                center_y = optical_center[1] * (1 - blend) + template_center[1] * blend
+                next_box = [center_x - optical_width / 2, center_y - optical_height / 2, center_x + optical_width / 2, center_y + optical_height / 2]
+                confidence = min(1.0, confidence * 0.7 + template_confidence * 0.3)
+                method = "optical_flow+template"
+            elif next_box is None and template_candidate is not None and template_confidence >= 0.2:
+                next_box = template_candidate
+                confidence = max(0.15, template_confidence)
+                method = "template"
+            if next_box is None:
+                next_box = current_box
+                confidence = 0.0
+            current_box = _bounded_tracking_box(next_box, analysis_width, analysis_height)
+            method_counts[method] += 1
+            confidence_total += confidence
+            if frame_index in requested:
+                normalized = [
+                    current_box[0] / analysis_width,
+                    current_box[1] / analysis_height,
+                    current_box[2] / analysis_width,
+                    current_box[3] / analysis_height,
+                ]
+                normalized = [round(min(1.0, max(0.0, value)), 6) for value in normalized]
+                results.append({"frame": frame_index, "box": normalized, "confidence": round(confidence, 4), "method": method})
+            previous_gray = current_gray
+    finally:
+        capture.release()
+
+    if len(results) != len(output_frames):
+        raise ValueError("自动跟踪未生成完整的目标帧")
+
+    if end_box is not None:
+        tracked_end = results[-1]["box"]
+        tracked_center = ((tracked_end[0] + tracked_end[2]) / 2, (tracked_end[1] + tracked_end[3]) / 2)
+        target_center = ((end_box[0] + end_box[2]) / 2, (end_box[1] + end_box[3]) / 2)
+        tracked_size = (tracked_end[2] - tracked_end[0], tracked_end[3] - tracked_end[1])
+        target_size = (end_box[2] - end_box[0], end_box[3] - end_box[1])
+        for item in results:
+            ratio = (int(item["frame"]) - start_frame) / max(1, end_frame - start_frame)
+            box = item["box"]
+            center_x = (box[0] + box[2]) / 2 + (target_center[0] - tracked_center[0]) * ratio
+            center_y = (box[1] + box[3]) / 2 + (target_center[1] - tracked_center[1]) * ratio
+            width = (box[2] - box[0]) + (target_size[0] - tracked_size[0]) * ratio
+            height = (box[3] - box[1]) + (target_size[1] - tracked_size[1]) * ratio
+            item["box"] = [
+                round(max(0.0, center_x - width / 2), 6),
+                round(max(0.0, center_y - height / 2), 6),
+                round(min(1.0, center_x + width / 2), 6),
+                round(min(1.0, center_y + height / 2), 6),
+            ]
+        results[-1]["box"] = list(end_box)
+        results[-1]["method"] = "human_end_keyframe"
+        results[-1]["confidence"] = 1.0
+
+    processed = max(1, end_frame - start_frame + 1)
+    quality = {
+        "video_file": video_path.name,
+        "processed_frames": processed,
+        "output_frames": len(results),
+        "analysis_resolution": f"{analysis_width}x{analysis_height}",
+        "mean_confidence": round(confidence_total / processed, 4),
+        "method_counts": method_counts,
+        "end_keyframe_corrected": end_box is not None,
+    }
+    return results, quality
+
+
 def annotation_reviews() -> dict[str, dict]:
     legacy = {
         str(item.get("annotation_id")): item
@@ -1868,6 +2602,7 @@ def frame_annotation_items(video_id: str, requested_time: float) -> list[dict]:
     frame = min(max(0, int(round(requested_time * float(info.get("fps", 30))))), int(info.get("frames", 1)) - 1)
     width, height = video_size(video_id)
     reviews = annotation_reviews()
+    deleted_ids = db_deleted_annotation_ids()
     items: list[dict] = []
     sources = (("prelabel", frame_records(video_id), "detections"), ("candidate", frame_records(video_id, "candidates"), "candidates"))
     for source_kind, records, field in sources:
@@ -1876,6 +2611,8 @@ def frame_annotation_items(video_id: str, requested_time: float) -> list[dict]:
         record = record_for_frame(records, frame)
         for index, detection in enumerate(record.get(field, [])):
             annotation_id = f"{video_id}:{source_kind}:{record.get('frame', frame)}:{index}"
+            if annotation_id in deleted_ids:
+                continue
             normalized, pixels = normalize_box(detection.get("xyxy"), video_id)
             review = reviews.get(annotation_id, {})
             items.append({
@@ -1900,13 +2637,19 @@ def frame_annotation_items(video_id: str, requested_time: float) -> list[dict]:
     return items
 
 
-def manual_annotation_items(video_id: str | None = None) -> list[dict]:
+def manual_annotation_items(video_id: str | None = None, frame: int | None = None) -> list[dict]:
     reviews = annotation_reviews()
     deleted_ids = db_deleted_annotation_ids()
     records: dict[str, dict] = {}
-    for record in read_jsonl(RUNTIME_ROOT / "annotations.jsonl") + db_manual_annotations(video_id):
+    # Current-frame review is latency-sensitive and SQLite is authoritative after migration.
+    source_records = db_manual_annotations(video_id, frame)
+    if frame is None:
+        source_records = read_jsonl(RUNTIME_ROOT / "annotations.jsonl") + source_records
+    for record in source_records:
         record_video_id = str(record.get("video_id") or video_id_for_source(record.get("video")))
         if video_id and record_video_id != video_id:
+            continue
+        if frame is not None and int(record.get("frame", -1)) != frame:
             continue
         annotation_id = str(record.get("annotation_id") or f"manual:{record_video_id}:{record.get('_line')}")
         if annotation_id in deleted_ids:
@@ -1926,7 +2669,7 @@ def manual_annotation_items(video_id: str | None = None) -> list[dict]:
             "box": normalized,
             "box_pixels": pixels,
             "box_format": "normalized_xyxy",
-            "source_kind": "manual",
+            "source_kind": record.get("source_kind", "manual"),
             "source": record.get("source", "平台人工标注"),
             "region": record.get("region", "未分区"),
             "track_id": record.get("track_id"),
@@ -1979,7 +2722,10 @@ def annotation_stats() -> dict:
         video_id = str(video["id"])
         prelabels += sum(len(record.get("detections", [])) for record in frame_records(video_id))
         candidates += sum(len(record.get("candidates", [])) for record in frame_records(video_id, "candidates"))
-    manual = manual_annotation_items()
+    stored = manual_annotation_items()
+    prelabels += sum(1 for item in stored if item.get("source_kind") == "prelabel")
+    candidates += sum(1 for item in stored if item.get("source_kind") == "candidate")
+    manual = [item for item in stored if item.get("source_kind") == "manual"]
     reviews = list(annotation_reviews().values())
     status_counts: dict[str, int] = {}
     for item in manual + reviews:
@@ -2137,6 +2883,82 @@ def build_annotation_package(status: str = "human_confirmed") -> tuple[Path, int
     return destination, len(items)
 
 
+def _update_render_job(job_id: str, **values: object) -> None:
+    with ANNOTATION_RENDER_LOCK:
+        ANNOTATION_RENDER_JOBS.setdefault(job_id, {}).update(values)
+
+
+def render_annotation_video_job(job_id: str, video_id: str) -> None:
+    capture = None
+    writer = None
+    try:
+        import cv2
+
+        source = annotation_video_path(video_id)
+        annotations = manual_annotation_items(video_id)
+        by_frame: dict[int, list[dict]] = {}
+        for annotation in annotations:
+            by_frame.setdefault(int(annotation.get("frame", 0)), []).append(annotation)
+        ANNOTATION_EXPORT_ROOT.mkdir(parents=True, exist_ok=True)
+        destination = ANNOTATION_EXPORT_ROOT / f"{video_id}_标注成片_{time.strftime('%Y%m%d_%H%M%S')}.mp4"
+        capture = cv2.VideoCapture(str(source))
+        if not capture.isOpened():
+            raise RuntimeError("无法打开源视频")
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 30)
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 1280)
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
+        total = max(1, int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 1))
+        writer = cv2.VideoWriter(str(destination), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+        if not writer.isOpened():
+            raise RuntimeError("无法创建标注成片")
+        frame_index = 0
+        _update_render_job(job_id, status="running", message="正在逐帧绘制已保存标注")
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            for item in by_frame.get(frame_index, []):
+                x1, y1, x2, y2 = [float(value) for value in item.get("box", [0, 0, 0, 0])]
+                left, top, right, bottom = int(x1 * width), int(y1 * height), int(x2 * width), int(y2 * height)
+                color = (188, 226, 57) if item.get("review_status") == "human_confirmed" else (102, 189, 255)
+                cv2.rectangle(frame, (left, top), (right, bottom), color, max(2, round(width / 640)))
+                caption = str(item.get("track_id") or item.get("annotation_id") or "object")[-32:]
+                cv2.putText(frame, caption, (left, max(20, top - 7)), cv2.FONT_HERSHEY_SIMPLEX, max(0.45, width / 2400), color, 2, cv2.LINE_AA)
+            writer.write(frame)
+            frame_index += 1
+            if frame_index % max(1, int(fps * 2)) == 0:
+                _update_render_job(job_id, progress=round(frame_index * 100 / total, 1))
+        capture.release()
+        capture = None
+        writer.release()
+        writer = None
+        manifest = {
+            "video_id": video_id, "source": str(source), "output": str(destination),
+            "frames": frame_index, "fps": fps, "annotation_count": len(annotations),
+            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"), "annotations": annotations,
+        }
+        atomic_write_json(destination.with_suffix(".json"), manifest)
+        _update_render_job(job_id, status="completed", progress=100, output=str(destination), message="标注成片和同名审计 JSON 已生成")
+    except Exception as exc:
+        _update_render_job(job_id, status="failed", message=str(exc))
+    finally:
+        if capture is not None:
+            capture.release()
+        if writer is not None:
+            writer.release()
+
+
+def start_annotation_render(video_id: str, operator: str) -> dict[str, object]:
+    if video_info(video_id) is None:
+        raise ValueError("视频不存在")
+    job_id = f"RENDER-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000:06d}"
+    job = {"job_id": job_id, "video_id": video_id, "operator": operator, "status": "queued", "progress": 0, "message": "等待生成", "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    with ANNOTATION_RENDER_LOCK:
+        ANNOTATION_RENDER_JOBS[job_id] = job
+    threading.Thread(target=render_annotation_video_job, args=(job_id, video_id), daemon=True, name=job_id).start()
+    return job
+
+
 class SOPHandler(SimpleHTTPRequestHandler):
     server_version = "NingboSOP/1.0"
 
@@ -2237,12 +3059,16 @@ class SOPHandler(SimpleHTTPRequestHandler):
         )
         manager_prefixes = (
             "/api/train", "/api/deploy", "/api/mes", "/api/decision", "/api/sop/save",
-            "/api/models", "/api/model-benchmark", "/api/training", "/api/spark", "/api/software",
+            "/api/models", "/api/model-benchmark", "/api/training", "/api/spark", "/api/software", "/api/cloud",
         )
         if method == "POST" and path == "/api/annotations/review":
             manager_prefixes = (*manager_prefixes, "/api/annotations/review")
         if method == "POST" and path == "/api/annotations/scope":
             manager_prefixes = (*manager_prefixes, "/api/annotations/scope")
+        if method == "POST" and path == "/api/annotations/prelabel":
+            manager_prefixes = (*manager_prefixes, "/api/annotations/prelabel")
+        if method == "POST" and path == "/api/cvat/annotations":
+            manager_prefixes = (*manager_prefixes, "/api/cvat/annotations")
         if path.startswith(admin_only) and role != "admin":
             self.send_json({"ok": False, "message": "该操作仅开发者可执行"}, HTTPStatus.FORBIDDEN)
             return None
@@ -2282,11 +3108,12 @@ class SOPHandler(SimpleHTTPRequestHandler):
             items = []
             if source in {"all", "frame", "prelabel", "candidate"}:
                 items.extend(frame_annotation_items(video_id, requested_time))
-            if source in {"all", "manual"}:
+            if source in {"all", "manual", "prelabel", "candidate"}:
                 fps = float((video_info(video_id) or {}).get("fps", 30))
                 tolerance = max(0.05, 1.1 / fps)
-                items.extend(item for item in manual_annotation_items(video_id) if abs(float(item.get("video_time", 0)) - requested_time) <= tolerance)
-            if source in {"prelabel", "candidate"}:
+                requested_frame = int(round(requested_time * fps))
+                items.extend(item for item in manual_annotation_items(video_id, requested_frame) if abs(float(item.get("video_time", 0)) - requested_time) <= tolerance)
+            if source in {"manual", "prelabel", "candidate"}:
                 items = [item for item in items if item.get("source_kind") == source]
             if status != "all":
                 items = [item for item in items if item.get("review_status") == status]
@@ -2307,6 +3134,19 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 return
             self.send_json({"ok": True, **db_annotation_history(video_id)})
             return
+        if path == "/api/annotations/checkpoint":
+            query = parse_qs(parsed.query)
+            video_id = str(query.get("video", [""])[0])
+            checkpoint_id = str(query.get("checkpoint", [""])[0])
+            if video_info(video_id) is None:
+                self.send_json({"ok": False, "message": "视频不存在"}, HTTPStatus.NOT_FOUND)
+                return
+            snapshot = annotation_checkpoint_snapshot(video_id, checkpoint_id)
+            if snapshot is None:
+                self.send_json({"ok": False, "message": "保存点不存在或快照已过期"}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_json({"ok": True, "snapshot": snapshot})
+            return
         if path == "/api/annotations/tracks":
             query = parse_qs(parsed.query)
             video_id = str(query.get("video", ["video_0265"])[0])
@@ -2316,11 +3156,27 @@ class SOPHandler(SimpleHTTPRequestHandler):
             tracks = db_annotation_tracks(video_id)
             self.send_json({"ok": True, "video_id": video_id, "items": tracks, "total": len(tracks)})
             return
+        if path == "/api/annotations/autosave":
+            video_id = str(parse_qs(parsed.query).get("video", ["video_0265"])[0])
+            self.send_json({"ok": True, "video_id": video_id, "snapshot": latest_annotation_draft(video_id)})
+            return
+        if path == "/api/annotations/render/status":
+            job_id = str(parse_qs(parsed.query).get("job", [""])[0])
+            with ANNOTATION_RENDER_LOCK:
+                job = ANNOTATION_RENDER_JOBS.get(job_id)
+            if job is None:
+                self.send_json({"ok": False, "message": "标注成片任务不存在"}, HTTPStatus.NOT_FOUND)
+            else:
+                self.send_json({"ok": True, "job": job})
+            return
         if path == "/api/annotations/scope":
             self.send_json({"ok": True, "scope": annotation_scope()})
             return
         if path == "/api/annotations/stats":
             self.send_json(annotation_stats())
+            return
+        if path == "/api/annotations/prelabel/status":
+            self.send_json(ai_prelabel_status())
             return
         if path == "/api/annotations/database":
             self.send_json(annotation_db_health())
@@ -2347,6 +3203,9 @@ class SOPHandler(SimpleHTTPRequestHandler):
             status = parse_qs(parsed.query).get("status", ["human_confirmed"])[0]
             package_path, _ = build_annotation_package(status)
             self.send_file_download(package_path)
+            return
+        if path == "/api/cloud/status":
+            self.send_json(cloud_sync_status())
             return
         if path == "/api/algorithm-comparison":
             if not ALGORITHM_COMPARISON_PATH.exists():
@@ -2424,6 +3283,9 @@ class SOPHandler(SimpleHTTPRequestHandler):
         if path == "/api/device/inventory":
             refresh_camera_services()
             self.send_json(device_inventory())
+            return
+        if path == "/api/camera/recommendations":
+            self.send_json({"ok": True, "items": read_config(ROOT / "config" / "camera_recommendations.json", [])})
             return
         if path == "/api/integrations":
             label_studio_url = os.getenv("LABEL_STUDIO_URL", "http://127.0.0.1:8080").rstrip("/")
@@ -2617,6 +3479,19 @@ class SOPHandler(SimpleHTTPRequestHandler):
                     )
                     annotation["evidence_path"] = str(evidence_path)
                 db_upsert_annotation(annotation)
+                supersedes_id = str(payload.get("supersedes_annotation_id") or "").strip()
+                supersedes_kind = str(payload.get("supersedes_source_kind") or "").strip()
+                if supersedes_id and supersedes_kind in {"prelabel", "candidate"}:
+                    db_delete_generated_annotation(
+                        {
+                            "annotation_id": supersedes_id,
+                            "video_id": video_id,
+                            "source_kind": supersedes_kind,
+                            "frame": annotation["frame"],
+                        },
+                        str((self.current_user() or {}).get("username") or "unknown"),
+                        f"由人工标注 {annotation['annotation_id']} 修正替代",
+                    )
                 self.append_event("annotations.jsonl", annotation)
                 self.send_json({"ok": True, "annotation": annotation, "database": annotation_db_health(), "message": f"当前帧标注已保存到区域“{annotation['region']}”，可进入质量抽检"})
                 return
@@ -2640,12 +3515,32 @@ class SOPHandler(SimpleHTTPRequestHandler):
             if path == "/api/annotations/delete":
                 annotation_id = str(payload.get("annotation_id") or "").strip()
                 user = self.current_user() or {}
-                result = db_delete_annotations([annotation_id], str(user.get("username") or "unknown"), str(payload.get("reason") or "人工删除"))
+                deleted_by = str(user.get("username") or "unknown")
+                reason = str(payload.get("reason") or "人工删除")
+                result = db_delete_annotations([annotation_id], deleted_by, reason)
                 if not result["deleted_count"]:
-                    self.send_json({"ok": False, "message": "只能删除已保存的人工标注；检测候选请使用驳回"}, 409)
-                    return
+                    parts = annotation_id.rsplit(":", 3)
+                    generated = None
+                    if len(parts) == 4 and parts[1] in {"prelabel", "candidate"}:
+                        video_id, _, frame_text, _ = parts
+                        info = video_info(video_id)
+                        try:
+                            requested_time = int(frame_text) / float((info or {}).get("fps", 30))
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            requested_time = -1
+                        if info is not None and requested_time >= 0:
+                            generated = next(
+                                (item for item in frame_annotation_items(video_id, requested_time) if item.get("annotation_id") == annotation_id),
+                                None,
+                            )
+                    if generated is None:
+                        self.send_json({"ok": False, "message": "标注不存在、已被删除或当前用户无权删除"}, 404)
+                        return
+                    result = db_delete_generated_annotation(generated, deleted_by, reason)
                 self.append_event("annotation_deletions.jsonl", result)
-                self.send_json({"ok": True, **result, "message": "已删除该人工标注，删除记录已留存"})
+                deleted_kind = str(result["deleted"][0].get("source_kind") or "manual")
+                kind_name = {"prelabel": "AI预标注", "candidate": "小目标候选", "manual": "人工标注"}.get(deleted_kind, "标注")
+                self.send_json({"ok": True, **result, "message": f"已删除该{kind_name}框，删除记录已留存"})
                 return
             if path == "/api/annotations/tracks/delete":
                 video_id = str(payload.get("video_id") or "").strip()
@@ -2653,9 +3548,18 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 if not video_id or not track_id:
                     raise ValueError("请指定要删除的视频和轨迹")
                 user = self.current_user() or {}
-                result = db_delete_track(video_id, track_id, str(user.get("username") or "unknown"))
-                self.append_event("annotation_deletions.jsonl", {**result, "track_id": track_id})
-                self.send_json({"ok": True, **result, "track_id": track_id, "message": f"已删除轨迹 {track_id} 及其 {result['deleted_count']} 个标注框"})
+                start_value, end_value = payload.get("start_frame"), payload.get("end_frame")
+                if start_value is None and end_value is None:
+                    result = db_delete_track(video_id, track_id, str(user.get("username") or "unknown"))
+                    message = f"已删除轨迹 {track_id} 及其 {result['deleted_count']} 个标注框"
+                else:
+                    if start_value is None or end_value is None:
+                        raise ValueError("删除轨迹片段必须同时指定起始帧和结束帧")
+                    start_frame, end_frame = int(start_value), int(end_value)
+                    result = db_delete_track_segment(video_id, track_id, start_frame, end_frame, str(user.get("username") or "unknown"))
+                    message = f"已删除轨迹 {track_id} 的第 {start_frame}-{end_frame} 帧，共 {result['deleted_count']} 个框"
+                self.append_event("annotation_deletions.jsonl", {**result, "track_id": track_id, "start_frame": start_value, "end_frame": end_value})
+                self.send_json({"ok": True, **result, "track_id": track_id, "message": message})
                 return
             if path == "/api/annotations/scope":
                 scope = save_annotation_scope(payload)
@@ -2667,10 +3571,31 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 self.append_event("annotation_checkpoints.jsonl", checkpoint)
                 self.send_json({"ok": True, "checkpoint": checkpoint, "database": annotation_db_health(), "message": f"标注进度已保存并备份：{checkpoint['annotation_count']} 条、{len(checkpoint['regions'])} 个区域"})
                 return
+            if path == "/api/annotations/prelabel":
+                user = self.current_user() or {}
+                job = control_ai_prelabel(str(payload.get("action") or "start"), str(user.get("username") or "unknown"))
+                self.append_event("ai_prelabel_jobs.jsonl", {"action": payload.get("action") or "start", "operator": user.get("username"), "status": job.get("status")})
+                self.send_json({"ok": True, "job": job, "message": str(job.get("message") or "AI预标注任务状态已更新")})
+                return
+            if path == "/api/annotations/render":
+                video_id = str(payload.get("video_id") or "").strip()
+                user = self.current_user() or {}
+                job = start_annotation_render(video_id, str(user.get("username") or "unknown"))
+                self.send_json({"ok": True, "job": job, "message": "标注成片已进入后台生成队列"})
+                return
+            if path == "/api/cloud/sync":
+                action = str(payload.get("action") or "").strip()
+                if action not in {"pull_google", "pull_baidu", "push_google", "push_baidu"}:
+                    raise ValueError("云盘同步操作无效")
+                user = self.current_user() or {}
+                job = start_cloud_sync(action, str(user.get("username") or "unknown"))
+                self.append_event("cloud_sync_jobs.jsonl", job)
+                self.send_json({"ok": True, "job": job, "message": "云盘同步任务已启动"})
+                return
             if path == "/api/annotations/interpolate":
-                required = {"video_id", "start_frame", "end_frame", "start_box", "end_box", "label"}
+                required = {"video_id", "start_frame", "end_frame", "start_box", "label"}
                 if not required.issubset(payload):
-                    raise ValueError("插值参数不完整")
+                    raise ValueError("自动跟踪参数不完整")
                 video_id = str(payload["video_id"])
                 info = video_info(video_id)
                 if info is None:
@@ -2679,34 +3604,41 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 if end_frame <= start_frame:
                     raise ValueError("当前关键帧必须晚于起始关键帧")
                 if end_frame - start_frame > 1800:
-                    raise ValueError("单次插值最多跨 1800 帧")
+                    raise ValueError("单次自动跟踪最多跨 1800 帧，请分段设置关键帧")
                 start_box, _ = normalize_box(payload["start_box"], video_id)
-                end_box, _ = normalize_box(payload["end_box"], video_id)
+                end_box = None
+                if payload.get("end_box") is not None:
+                    end_box, _ = normalize_box(payload["end_box"], video_id)
                 step = max(1, int(payload.get("frame_step", 1)))
                 fps = float(info.get("fps", 30))
                 track_id = str(payload.get("track_id") or f"track:{video_id}:{time.time_ns()}")
                 frames = list(range(start_frame, end_frame + 1, step))
                 if frames[-1] != end_frame:
                     frames.append(end_frame)
+                tracked, quality = track_video_box(video_id, start_frame, end_frame, start_box, frames, end_box)
                 generated = []
                 start_annotation_id = str(payload.get("start_annotation_id") or "").strip()
-                for frame in frames:
-                    ratio = (frame - start_frame) / (end_frame - start_frame)
-                    box = [round(a + (b - a) * ratio, 6) for a, b in zip(start_box, end_box)]
+                for tracked_item in tracked:
+                    frame = int(tracked_item["frame"])
+                    box = tracked_item["box"]
                     _, pixels = normalize_box(box, video_id)
                     annotation = {
-                        "annotation_id": start_annotation_id if frame == start_frame and start_annotation_id else f"interpolated:{video_id}:{track_id}:{frame}",
+                        "annotation_id": start_annotation_id if frame == start_frame and start_annotation_id else f"tracked:{video_id}:{track_id}:{frame}",
                         "video_id": video_id, "video_time": round(frame / fps, 3), "frame": frame,
                         "label": str(payload["label"]), "region": str(payload.get("region") or "未分区"),
                         "track_id": track_id, "box": box, "box_pixels": pixels,
                         "box_format": "normalized_xyxy", "source_kind": "manual",
-                        "source": "关键帧线性插值候选", "review_status": "pending",
+                        "source": "视频画面自动跟踪候选", "review_status": "pending",
+                        "tracking_method": tracked_item["method"],
+                        "tracking_confidence": tracked_item["confidence"],
                         "reviewer": payload.get("reviewer", "本地标注员"),
                     }
                     db_upsert_annotation(annotation)
                     generated.append(annotation)
-                self.append_event("annotation_interpolations.jsonl", {"video_id": video_id, "track_id": track_id, "start_frame": start_frame, "end_frame": end_frame, "generated": len(generated), "region": payload.get("region")})
-                self.send_json({"ok": True, "generated": len(generated), "generated_frames": frames, "start_frame": start_frame, "end_frame": end_frame, "track_id": track_id, "message": f"轨迹 {track_id} 已生成 {len(generated)} 个框（含起止关键帧），仍需人工复核"})
+                event = {"video_id": video_id, "track_id": track_id, "start_frame": start_frame, "end_frame": end_frame, "generated": len(generated), "region": payload.get("region"), "quality": quality}
+                self.append_event("annotation_tracking.jsonl", event)
+                correction = "，并按人工结束框校正" if end_box is not None else ""
+                self.send_json({"ok": True, "generated": len(generated), "generated_frames": frames, "items": generated, "start_frame": start_frame, "end_frame": end_frame, "track_id": track_id, "quality": quality, "message": f"轨迹 {track_id} 已自动跟踪生成 {len(generated)} 个框{correction}，仍需逐段人工复核"})
                 return
             if path == "/api/sop/save":
                 if not isinstance(payload.get("steps"), list) or not payload["steps"]:
@@ -2737,6 +3669,15 @@ class SOPHandler(SimpleHTTPRequestHandler):
                 task = db_record_cvat_task(payload, result)
                 self.append_event("cvat_tasks.jsonl", task)
                 self.send_json({**result, "task": task})
+                return
+            if path == "/api/cvat/annotations":
+                task_id = int(payload.get("task_id") or 0)
+                video_id = str(payload.get("video_id") or "").strip()
+                if task_id <= 0 or not video_id:
+                    raise ValueError("请指定 CVAT 任务和视频")
+                result = cvat_push_annotations(task_id, video_id)
+                self.append_event("cvat_annotation_sync.jsonl", result)
+                self.send_json(result)
                 return
             if path == "/api/production-lines/select":
                 line = select_production_line(str(payload.get("line_id") or ""))
@@ -2842,6 +3783,15 @@ def main() -> None:
     mimetypes.add_type("video/mp4", ".mp4")
     restore_selected_pcb_model()
     host, port = os.getenv("SOP_HOST", "0.0.0.0"), int(os.getenv("SOP_PORT", "8096"))
+    if os.getenv("SOP_CAMERA_AUTOSTART", "0").strip().lower() in {"1", "true", "yes", "on"}:
+        refresh_camera_services()
+        for service in LIVE_CAMERAS.values():
+            if not service.source:
+                continue
+            try:
+                service.start()
+            except Exception as exc:
+                print(f"摄像头 {service.camera_id} 自动启动失败：{exc}", file=sys.stderr)
     print(f"宁波SOP分析平台已启动：http://127.0.0.1:{port}")
     print(f"局域网访问地址：http://{primary_lan_address()}:{port}")
     print(f"证据保存目录：{EVIDENCE_ROOT}")

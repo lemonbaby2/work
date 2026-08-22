@@ -1,0 +1,32 @@
+[
+  {
+    "id": "video_40b5",
+    "display_name": "视频四｜仪表板正面卡扣、接插件与紧固复核",
+    "source": "E:/宁波项目/测试验视频/40b5d23aa4113e9334dba38e8016bb50.mp4",
+    "source_copy": "原始测试视频_40b5.mp4",
+    "output": "仪表板SOP_视频四_40b5_YOLOE26_SAHI_无遮挡版.mp4",
+    "steps": [
+      {"id": "S01", "label": "总成到位与外观确认", "start_s": 0.0, "end_s": 8.0},
+      {"id": "S02", "label": "上部卡扣与线束整理", "start_s": 8.0, "end_s": 17.0},
+      {"id": "S03", "label": "中控区域接插件复核", "start_s": 17.0, "end_s": 26.0},
+      {"id": "S04", "label": "右侧支架与紧固点复核", "start_s": 26.0, "end_s": 36.0},
+      {"id": "S05", "label": "左侧与下部紧固复核", "start_s": 36.0, "end_s": 46.0},
+      {"id": "S06", "label": "全局检查与下线确认", "start_s": 46.0, "end_s": 54.0}
+    ]
+  },
+  {
+    "id": "video_ecc57",
+    "display_name": "视频五｜仪表板长流程装配与电动紧固",
+    "source": "E:/宁波项目/测试验视频/ecc57e877fb6345f0f0d8cf9eb3875f3.mp4",
+    "source_copy": "原始测试视频_ecc57.mp4",
+    "output": "仪表板SOP_视频五_ecc57_YOLOE26_SAHI_无遮挡版.mp4",
+    "steps": [
+      {"id": "S01", "label": "工位准备与骨架外观确认", "start_s": 0.0, "end_s": 30.0},
+      {"id": "S02", "label": "线束、卡扣与子件预装", "start_s": 30.0, "end_s": 70.0},
+      {"id": "S03", "label": "模块定位与手工预紧", "start_s": 70.0, "end_s": 110.0},
+      {"id": "S04", "label": "中控饰板与支架压合", "start_s": 110.0, "end_s": 145.0},
+      {"id": "S05", "label": "电动工具分区紧固", "start_s": 145.0, "end_s": 185.0},
+      {"id": "S06", "label": "翻面复核与下线检查", "start_s": 185.0, "end_s": 217.87}
+    ]
+  }
+]

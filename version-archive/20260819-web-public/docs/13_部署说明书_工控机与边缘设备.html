@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>宁波 SOP 平台部署说明书 20260819</title>
+<style>body{font:15px/1.8 system-ui,"Microsoft YaHei",sans-serif;color:#20333c;max-width:980px;margin:36px auto;padding:0 22px}h1{color:#0d6e65;border-bottom:3px solid #39b9a3;padding-bottom:10px}h2{margin-top:32px;color:#19576a;border-left:4px solid #39b9a3;padding-left:10px}h3{color:#536b76}code,pre{font-family:Consolas,monospace}pre{background:#102231;color:#c9eee4;padding:16px;overflow:auto;border-radius:6px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{padding:9px;border:1px solid #dce5e8;text-align:left;vertical-align:top}th{background:#eff6f5}.warn{background:#fff4e5;border-left:4px solid #d78b28;padding:12px}.ok{background:#e7f6f0;border-left:4px solid #1ba785;padding:12px}</style>
+<body>
+<h1>宁波零部件 SOP 分析平台部署说明书</h1>
+<p><b>版本：</b>20260819 xjaisop　<b>适用：</b>DGX Spark、RTX 工控机、Windows 10/11、Linux IPC、CPU 边缘设备</p>
+<div class="warn"><b>真实性边界：</b>本说明书描述可复现的部署流程。测试视频中的视觉结果、模拟 MES ACK 和预标注指标不能替代现场冻结测试集、工具控制器回执或客户 MES 联调。</div>
+<h2>1. 设备拓扑</h2>
+<pre>网络摄像头 3 ── 工厂 Wi-Fi/LAN ── 192.168.1.135:554 RTSP
+                                      │
+                                      ├─ IPC 工控机：网页、相机服务、离线队列
+                                      ├─ DGX Spark：训练/多路 GPU 推理
+                                      └─ MES/厂内服务器：工单、结果、ACK、审计
+
+摄像头临时 AP 配网：192.168.188.2/24，网关 192.168.188.1
+记录的 AP/WLAN 名称：IPC-631180002304</pre>
+<h2>2. DGX Spark/Linux 部署</h2>
+<pre>cd SOP分析平台_老板汇报版
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+chmod +x 启动SOP平台_DGX.sh scripts/probe_network_camera.py
+./启动SOP平台_DGX.sh</pre>
+<p>浏览器访问 <code>http://127.0.0.1:8096</code>；局域网访问使用启动日志显示的主机地址。健康检查：<code>curl http://127.0.0.1:8096/api/health</code>。</p>
+<h3>摄像头 3 配网与视频流</h3>
+<ol><li>手机或电脑临时连接摄像头 AP，按说明书进入 BTACAM 的 AP 热点配置。</li><li>把摄像头加入与 IPC 相同的工厂 Wi-Fi；路由器按 MAC <code>c4:3c:b0:be:40:e8</code> 建立 DHCP 静态租约 <code>192.168.1.135</code>。</li><li>在网页“现场监控 → 网络摄像头 3”填写厂家 App 提供的完整 RTSP 地址，先测试再保存。</li><li>也可命令行验证：<code>./.venv/bin/python scripts/probe_network_camera.py 'rtsp://用户名:密码@192.168.1.135:554/实际路径'</code>。</li></ol>
+<p>平台支持有限候选路径自动探测，但不会猜测或暴力破解账号。根地址返回 400 时，必须回到 BTACAM App 的播放/分享页复制完整地址。</p>
+<h2>3. Windows RTX 工控机</h2>
+<ol><li>安装 Python 3.12 x64、NVIDIA 驱动和与现场 CUDA 匹配的 PyTorch。</li><li>解压工程，执行 <code>py -3.12 -m venv .venv</code> 和 <code>.venv\Scripts\pip install -r requirements.txt</code>。</li><li>使用 <code>启动SOP平台_Windows.bat</code> 启动服务；浏览器打开 <code>http://127.0.0.1:8096</code>。</li><li>在“训练与部署”页先登记训练/灰度单；生产替换必须由工艺和质量双人确认。</li></ol>
+<h2>4. CPU/低功耗边缘设备</h2>
+<p>使用 ONNX Runtime 加载 <code>models/yolo26n_两视频小目标蒸馏_待人工验收.onnx</code>。建议 640 输入、5 FPS 以下、单路摄像头；低功耗设备只做辅助告警，不能单独作为最终放行门。</p>
+<h2>5. 训练、验收与发布</h2>
+<table><tr><th>阶段</th><th>必须留档</th><th>放行条件</th></tr><tr><td>数据冻结</td><td>人工确认标注、抽检记录、数据版本、SHA256</td><td>质量员签字，预标注不直接进生产</td></tr><tr><td>训练</td><td>模型、commit、GPU、依赖、超参、日志</td><td>训练任务状态为可复现</td></tr><tr><td>验收</td><td>漏装/错序/误报/延迟/稳定性和混淆样本</td><td>现场冻结测试集达标</td></tr><tr><td>灰度</td><td>目标工位、观察窗口、告警、回滚包</td><td>工艺/质量双人确认</td></tr></table>
+<pre>python scripts/benchmark_detection_models.py --device 0 --limit 24
+python qa/verify_delivery.py
+ffprobe -v error -show_entries stream=codec_name,width,height web/media/*.mp4</pre>
+<h2>6. MES 联调</h2>
+<p>生产接口至少需要：工单下发、结果回传、业务 ACK、错误码、幂等键、离线补传和审计查询。平台本地 <code>/api/mes/test</code> 只验证事件落盘和模拟 ACK，不会连接生产 MES。正式联调前由 IT/MES 提供测试 URL、认证、字段字典和回执样例。</p>
+<h2>7. 故障排查与回滚</h2>
+<ul><li>相机网络不可达：检查工厂 Wi-Fi、DHCP 租约、路由、554 端口；AP 配网地址仅用于临时配置。</li><li>RTSP 400：路径或认证不正确，从 BTACAM App 复制完整播放地址。</li><li>网页无画面：检查同一相机是否被其他进程占用，Linux 使用 <code>fuser -v /dev/video0</code>。</li><li>模型异常：停止服务，恢复上一版模型/配置/依赖目录，保留事件日志后再分析。</li><li>MES 超时：保持 HOLD，本地队列按事件顺序重试，禁止人工删日志后放行。</li></ul>
+<div class="ok"><b>交付原则：</b>视觉建议可以解释，确定性门禁必须可审计；任何缺少工具回执或 MES ACK 的结果保持 HOLD。</div>
+</body></html>

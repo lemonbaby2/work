@@ -1,0 +1,11 @@
+{
+  "source": "0",
+  "model": "models/yolo26n.pt",
+  "camera_name": "CAM_TOP",
+  "segment_seconds": 300,
+  "output_dir": "runtime/camera_capture",
+  "dgx_dir": "/mnt/dgx/sop/camera_segments",
+  "confidence": 0.35,
+  "device": "0",
+  "preview": true
+}

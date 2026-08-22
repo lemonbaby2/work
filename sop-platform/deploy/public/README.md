@@ -30,3 +30,20 @@ curl https://sop.example.com/api/health
 - 未登录请求 `/media/*` 必须返回 401；
 - 不得在仓库、Caddyfile 或截图中写入平台密码、CVAT Token 或相机凭据；
 - 正式放行前应在身份提供商、VPN 或 Cloudflare Access 层再加一层企业身份验证。
+
+## 临时公网验收
+
+没有固定域名时，可用 Quick Tunnel 临时验收。它只暴露绑定在
+`127.0.0.1:8097` 的第二个 SOP 进程，不暴露 CVAT `8081`，也不改变局域网
+`8096` 服务：
+
+```bash
+chmod +x deploy/public/start_quick_tunnel.sh
+./deploy/public/start_quick_tunnel.sh
+```
+
+脚本优先使用已安装的 Cloudflare Quick Tunnel；未安装完整 `cloudflared` 时自动
+回退到 SSH HTTPS Tunnel。终端输出的 `https://*.trycloudflare.com` 或
+`https://*.lhr.life` 是本次运行地址。关闭脚本后地址失效；
+它没有 Cloudflare Access 企业身份层，只可用于短期验收，正式生产仍使用固定域名、
+Caddy 或命名 Tunnel，并在外层增加企业身份验证。

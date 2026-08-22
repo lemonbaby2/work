@@ -1,0 +1,125 @@
+{
+  "overall": "PASS",
+  "checks": [
+    {
+      "name": "五视频目录汇总",
+      "status": "PASS",
+      "detail": {
+        "videos": 5,
+        "frames": 15163,
+        "duration_s": 505.43,
+        "steps": 30
+      }
+    },
+    {
+      "name": "成片验收：仪表板SOP_视频四_40b5_YOLOE26_SAHI_无遮挡版.mp4",
+      "status": "PASS",
+      "detail": {
+        "opened": true,
+        "frames": 1620,
+        "fps": 30.0,
+        "width": 1620,
+        "height": 720,
+        "fourcc": "h264"
+      }
+    },
+    {
+      "name": "成片验收：仪表板SOP_视频五_ecc57_YOLOE26_SAHI_无遮挡版.mp4",
+      "status": "PASS",
+      "detail": {
+        "opened": true,
+        "frames": 6536,
+        "fps": 30.0,
+        "width": 1620,
+        "height": 720,
+        "fourcc": "h264"
+      }
+    },
+    {
+      "name": "数据集划分",
+      "status": "PASS",
+      "detail": {
+        "train": 382,
+        "val": 81,
+        "test": 81
+      }
+    },
+    {
+      "name": "图像与YOLO标签一一对应",
+      "status": "PASS",
+      "detail": {
+        "train": [
+          382,
+          382
+        ],
+        "val": [
+          81,
+          81
+        ],
+        "test": [
+          81,
+          81
+        ]
+      }
+    },
+    {
+      "name": "YOLO标签抽样格式与归一化",
+      "status": "PASS",
+      "detail": "抽检30份标签"
+    },
+    {
+      "name": "模型文件",
+      "status": "PASS",
+      "detail": {
+        "yoloe-26s-seg.pt": 31072171,
+        "yolo26n_两视频小目标蒸馏_待人工验收.pt": 5439023,
+        "yolo26n_两视频小目标蒸馏_待人工验收.onnx": 10453386
+      }
+    },
+    {
+      "name": "十张中文可视化",
+      "status": "PASS",
+      "detail": [
+        "01_视频四_六步SOP总览.jpg",
+        "02_视频五_六步SOP总览.jpg",
+        "03_视频四_小目标细节.jpg",
+        "04_视频五_小目标细节.jpg",
+        "05_十二类预标注分布.png",
+        "06_目标框尺寸分布.png",
+        "07_YOLO26训练损失曲线.png",
+        "08_教师伪标签一致性曲线.png",
+        "09_训练验证测试集划分.png",
+        "10_前沿SOP算法流程图.png"
+      ]
+    },
+    {
+      "name": "网页五视频文案",
+      "status": "PASS",
+      "detail": "已更新"
+    },
+    {
+      "name": "顶部工作栏不遮挡且完整视频比例",
+      "status": "PASS",
+      "detail": "工作栏正常流 + 9:4"
+    },
+    {
+      "name": "网页五视频切换逻辑",
+      "status": "PASS",
+      "detail": "已更新"
+    },
+    {
+      "name": "真实性与放行边界",
+      "status": "PASS",
+      "detail": "文档已明确"
+    },
+    {
+      "name": "在线API",
+      "status": "PASS",
+      "detail": {
+        "status": 200,
+        "videos": 5
+      }
+    }
+  ],
+  "truth_boundary": "自动预标注和教师一致性指标不等于人工真值量产精度；缺扭矩/MES证据保持HOLD。"
+}

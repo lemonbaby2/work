@@ -1,0 +1,14 @@
+services:
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    container_name: ningbo-sop-label-studio
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
+      LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: /label-studio/files
+    volumes:
+      - ./data:/label-studio/data
+      - ../../web/media:/label-studio/files:ro
+      - ../../runtime/label_studio_imports:/label-studio/imports

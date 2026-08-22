@@ -1,0 +1,18 @@
+[Unit]
+Description=SOP historical library variant on port 8101
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/xjai/sop_project/SOP分析平台_老板汇报版
+Environment="PYTHONUNBUFFERED=1"
+Environment="SOP_HOST=0.0.0.0"
+Environment="SOP_PORT=8101"
+Environment="SOP_CAMERA_AUTOSTART=0"
+ExecStart=/home/xjai/sop_project/SOP分析平台_老板汇报版/.venv/bin/python "/home/xjai/sop_project/SOP分析平台_老板汇报版/server.py"
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

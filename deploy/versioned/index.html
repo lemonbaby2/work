@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SOP 本机版本入口</title>
+  <style>
+    :root { color-scheme: light; font-family: "Microsoft YaHei", system-ui, sans-serif; color: #18232b; background: #f4f6f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #18232b; color: #fff; padding: 24px max(20px, calc((100vw - 1120px) / 2)); border-bottom: 4px solid #e3a629; }
+    header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: 0; }
+    header p { margin: 0; color: #d9e0e4; }
+    main { width: min(1120px, calc(100% - 32px)); margin: 24px auto 40px; }
+    .notice { border-left: 4px solid #16746a; background: #fff; padding: 14px 16px; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ccd4d8; }
+    th, td { text-align: left; padding: 13px 14px; border-bottom: 1px solid #dce2e5; vertical-align: top; }
+    th { background: #e9eef0; font-size: 13px; color: #44515a; }
+    td b { display: block; margin-bottom: 3px; }
+    td span { color: #66737b; font-size: 13px; }
+    a { display: inline-block; color: #075f9b; font-weight: 700; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .main-version { border-left: 4px solid #16746a; }
+    code { font-family: ui-monospace, monospace; color: #37444d; }
+    @media (max-width: 760px) {
+      table, tbody, tr, td { display: block; }
+      thead { display: none; }
+      tr { border-bottom: 8px solid #f4f6f7; }
+      td { border-bottom: 1px solid #edf0f2; }
+      td::before { content: attr(data-label); display: block; color: #66737b; font-size: 12px; margin-bottom: 3px; }
+    }
+  </style>
+</head>
+<body>
+  <header><h1>SOP 本机版本入口</h1><p>所有版本独立运行，源目录、运行数据和端口互不覆盖。</p></header>
+  <main>
+    <div class="notice">主入口已恢复为当前对话的完整集成代码。历史版本用于比对和追溯，不应直接替代生产数据。</div>
+    <table>
+      <thead><tr><th>入口</th><th>版本</th><th>用途</th><th>源码状态</th></tr></thead>
+      <tbody>
+        <tr class="main-version"><td data-label="入口"><a data-port="8096">打开 8096</a></td><td data-label="版本"><b>当前对话完整集成版</b><span>2026-08-21 至 2026-08-22</span></td><td data-label="用途">标注、自动跟踪、复核、CVAT、摄像头与 Windows APP</td><td data-label="源码状态"><code>work-delivery-repo/sop-platform</code></td></tr>
+        <tr><td data-label="入口"><a data-port="8101">打开 8101</a></td><td data-label="版本"><b>视频库流程变体</b><span>2026-08-22</span></td><td data-label="用途">保留网站“变样”时正在运行的页面</td><td data-label="源码状态"><code>version-archive/20260822-library-variant</code></td></tr>
+        <tr><td data-label="入口"><a data-port="8102">打开 8102</a></td><td data-label="版本"><b>自动跟踪恢复版</b><span>2026-08-21</span></td><td data-label="用途">本对话中修复的关键帧、轨迹移动缩放与删除流程</td><td data-label="源码状态">独立原目录 + Git 当前代码历史</td></tr>
+        <tr><td data-label="入口"><a data-port="8103">打开 8103</a></td><td data-label="版本"><b>协同标注版</b><span>2026-08-20</span></td><td data-label="用途">局域网多用户标注与 CVAT 协同</td><td data-label="源码状态"><code>version-archive/20260820-collaborative-annotation</code></td></tr>
+        <tr><td data-label="入口"><a data-port="8104">打开 8104</a></td><td data-label="版本"><b>网页前后端/公网展示版</b><span>2026-08-19</span></td><td data-label="用途">早期完整网页、公开展示与安装器资料</td><td data-label="源码状态"><code>version-archive/20260819-web-public</code></td></tr>
+        <tr><td data-label="入口"><a data-port="8105">打开 8105</a></td><td data-label="版本"><b>第三摄像头交付版</b><span>2026-08-19</span></td><td data-label="用途">第三网络摄像头绑定与早期现场监控</td><td data-label="源码状态"><code>version-archive/20260819-third-camera</code></td></tr>
+        <tr><td data-label="入口"><a data-port="8081">打开 8081</a></td><td data-label="版本"><b>CVAT 2.73.1</b><span>独立 Docker 服务</span></td><td data-label="用途">官方标注任务、作业与审核</td><td data-label="源码状态"><code>/home/xjai/tools/cvat</code></td></tr>
+      </tbody>
+    </table>
+  </main>
+  <script>
+    document.querySelectorAll("[data-port]").forEach(link => {
+      link.href = `${location.protocol}//${location.hostname}:${link.dataset.port}/`;
+    });
+  </script>
+</body>
+</html>

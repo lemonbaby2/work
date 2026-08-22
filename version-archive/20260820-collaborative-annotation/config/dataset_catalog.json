@@ -1,0 +1,122 @@
+[
+  {
+    "id": "pcb-components",
+    "name": "PCB贴片与电子元器件",
+    "line": "产线一：PCB贴片/焊接",
+    "task": "元器件检测、焊点/缺陷检测、工人操作习惯",
+    "labels": ["PCB板", "电阻", "电容", "电感", "二极管", "芯片", "连接器", "焊点", "缺件", "错件", "手部", "烙铁/焊枪"],
+    "sources": [
+      {"name": "PCBA-Dataset", "url": "https://github.com/ismh16/PCBA-Dataset", "license": "以仓库 LICENSE/数据说明为准"},
+      {"name": "YOLOv8 PCB Detection", "url": "https://github.com/olegofriendz/yolov8-pcb-detection", "license": "MIT（代码）；图片/权重按仓库说明复核"},
+      {"name": "Mendeley PCB Defect Dataset", "url": "https://data.mendeley.com/datasets/7p3d8w2n6g/1", "license": "按数据集页面条款使用"}
+    ],
+    "embedding_policy": "平台嵌入来源索引、类别、预览与下载入口；复制全量图片前必须核验许可证和商业使用条款。"
+  },
+  {
+    "id": "pcb-normal-assembly",
+    "name": "PCB正常装配与贴片流程",
+    "line": "产线一：PCB贴片/焊接",
+    "task": "正常装配基线、元器件位置、焊点和工人动作",
+    "status": "需现场采集",
+    "sources": [
+      {"name": "PCBA-Dataset", "url": "https://github.com/ismh16/PCBA-Dataset", "license": "按仓库数据说明复核"},
+      {"name": "PCB Component Detection", "url": "https://github.com/s39674/PCB-Component-Detection", "license": "仓库未声明统一数据许可证，商用前单独核验"},
+      {"name": "PCB components detection recognition", "url": "https://github.com/talisma-cassoma/pcb-components-detection-recognition", "license": "按仓库数据说明复核"}
+    ],
+    "download": "索引已建立；现场正常装配数据必须通过项目采集接口导入，不能用网络图片替代工位真值。",
+    "embedding_policy": "用于正常样本预训练和位置先验；最终工位识别必须用现场相机、治具和光源数据迁移学习。"
+  },
+  {
+    "id": "pcb-ng-poka-yoke",
+    "name": "PCB NG / 防错与焊点缺陷",
+    "line": "产线一：PCB贴片/焊接",
+    "task": "缺件、错件、偏移、反向、短路、虚焊和 LED/MAC 防错",
+    "status": "公开缺陷集 + 现场私有NG集",
+    "sources": [
+      {"name": "DeepPCB", "url": "https://github.com/tangsanli5201/DeepPCB", "license": "按原数据集论文/仓库条款复核"},
+      {"name": "Mendeley PCB Defect Dataset", "url": "https://data.mendeley.com/datasets/7p3d8w2n6g/1", "license": "按数据集页面条款使用"},
+      {"name": "PCB Quality Control", "url": "https://github.com/ajosegun/PCBQualityControl", "license": "按仓库数据说明复核"},
+      {"name": "SMT solder joint defect detection", "url": "https://github.com/hybben/Scanning-SMT-solder-joint-defect-detection-system-based-on-Yolo-algorithm", "license": "按仓库数据说明复核"}
+    ],
+    "download": "公开集可做缺陷预训练；LED异常、MAC不一致和工位防错必须由扫码/MES/串口事件生成内部标注。",
+    "embedding_policy": "NG样本与OK样本必须按产品版本、批次、工单隔离；严禁把同一产品连续帧随机分到训练集和测试集。"
+  },
+  {
+    "id": "industrial-anomaly",
+    "name": "工业异常检测综合集",
+    "line": "跨产线迁移学习",
+    "task": "表面划痕、污迹、缺口、异常纹理、正常/异常分类",
+    "status": "公开数据集索引",
+    "sources": [
+      {"name": "MVTec AD", "url": "https://www.mvtec.com/company/research/datasets/mvtec-ad", "license": "按MVTec数据集许可使用"},
+      {"name": "VisA", "url": "https://github.com/amazon-science/spot-diff", "license": "按官方仓库/数据集许可复核"},
+      {"name": "BTAD", "url": "https://github.com/pankajmishra000/BTAD", "license": "按官方数据说明复核"},
+      {"name": "KolektorSDD", "url": "https://www.vicos.si/resources/kolektorsdd/", "license": "按官方页面条款使用"},
+      {"name": "NEU-DET", "url": "https://github.com/Charmve/Surface-Defect-Detection", "license": "按数据集原始条款复核"},
+      {"name": "Awesome Industrial Anomaly Detection", "url": "https://github.com/M-3LAB/awesome-industrial-anomaly-detection", "license": "索引页，具体数据集逐项核验"}
+    ],
+    "download": "作为跨域预训练候选；不直接作为宁波模塑量产测试集。"
+  },
+  {
+    "id": "automotive-fasteners",
+    "name": "汽车零部件、固定件和螺丝",
+    "line": "产线二：汽车零部件装配",
+    "task": "装配顺序、零部件、螺钉/螺栓/卡扣、手部和工具",
+    "labels": ["仪表板总成", "仪表板骨架", "饰板总成", "线束", "电气接插件", "电动紧固工具", "操作人员手部", "螺钉头", "螺栓头", "塑料卡扣", "线束插头", "紧固孔"],
+    "sources": [
+      {"name": "现有宁波模塑视频与逐帧预标注", "url": "/api/videos", "license": "项目内部数据"},
+      {"name": "Open Images Dataset", "url": "https://storage.googleapis.com/openimages/web/index.html", "license": "按Open Images许可与图片来源条款复核"}
+    ],
+    "embedding_policy": "现有项目数据默认进入待人工复核池；外部图片仅作为预训练/补充样本，不替代现场冻结测试集。"
+  },
+  {
+    "id": "automotive-sop-ng",
+    "name": "车载电子模块SOP NG / 防错",
+    "line": "产线二：汽车零部件装配",
+    "task": "漏装、错装、错序、LED异常、MAC不一致、工具和扫码关联",
+    "status": "项目私有数据集",
+    "sources": [
+      {"name": "宁波模塑现场视频/扫码/串口/MES事件", "url": "/api/production-lines", "license": "项目内部数据"},
+      {"name": "Assembly101", "url": "https://assembly101.github.io/", "license": "按官方数据许可使用；动作类别需重新映射"}
+    ],
+    "download": "公开动作数据只能补充动作预训练；NG、防错、LED和MAC关系必须从现场系统事件产生。",
+    "embedding_policy": "视频、扫码、串口和MES事件使用统一 event_id 关联，按产品SN/工单分组切分。"
+  },
+  {
+    "id": "assembly-actions",
+    "name": "工业装配动作与操作习惯",
+    "line": "产线二：汽车零部件装配",
+    "task": "手部、工具、拿取、放置、紧固、停顿和错序动作",
+    "status": "动作预训练候选",
+    "sources": [
+      {"name": "Assembly101", "url": "https://assembly101.github.io/", "license": "按官方数据许可使用"},
+      {"name": "NVIDIA TAO ActionRecognitionNet", "url": "https://github.com/NVIDIA/tao_pytorch_backend", "license": "代码许可与数据集分开核验"}
+    ],
+    "download": "动作类别与宁波SOP不一一对应，需在CVAT中重新标注步骤区间。"
+  },
+  {
+    "id": "coating-defects",
+    "name": "产品涂料与喷涂均匀性",
+    "line": "产线三：喷涂/胶水",
+    "task": "划痕、污迹、凹凸不平、喷胶轨迹、连续出胶、均匀性",
+    "labels": ["产品表面", "划痕", "污迹", "凹凸不平", "喷涂区域", "胶枪", "胶线", "断胶", "漏喷", "不均匀"],
+    "sources": [
+      {"name": "MVTec AD", "url": "https://www.mvtec.com/company/research/datasets/mvtec-ad", "license": "按MVTec数据集许可使用"},
+      {"name": "Anomalib", "url": "https://github.com/openvinotoolkit/anomalib", "license": "Apache-2.0（代码）；数据集分别核验"}
+    ],
+    "embedding_policy": "异常检测数据以正常样本建模为主，现场缺陷样本必须补采并按工单隔离测试。"
+  },
+  {
+    "id": "molding-surface-ng",
+    "name": "模塑表面与喷涂NG",
+    "line": "产线三：喷涂/胶水",
+    "task": "划痕、污迹、缩痕、凹凸、漏喷、喷涂不均和胶线断裂",
+    "status": "公开异常集预训练 + 现场采集",
+    "sources": [
+      {"name": "MVTec AD", "url": "https://www.mvtec.com/company/research/datasets/mvtec-ad", "license": "按数据集许可使用"},
+      {"name": "VisA", "url": "https://github.com/amazon-science/spot-diff", "license": "按官方许可复核"},
+      {"name": "DAGM 2007", "url": "https://conferences.mpi-inf.mpg.de/dagm/2007/prizes.html", "license": "按官方条款使用"}
+    ],
+    "download": "公开集补充异常纹理；喷涂轨迹和连续出胶必须采集真实胶枪、真实光照和真实节拍数据。"
+  }
+]

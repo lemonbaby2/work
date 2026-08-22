@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-08-16 19:54:47",
+  "processing_seconds": 247.3,
+  "videos": [
+    {
+      "id": "video_de02",
+      "source": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_YOLOv8逐帧识别演示_小目标增强版.mp4",
+      "output": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_YOLOv8逐帧识别演示_小目标增强版_右侧SOP步骤面板版.mp4",
+      "frames": 2326,
+      "fps": 30.0,
+      "resolution": "1620×720",
+      "duration_s": 77.53
+    },
+    {
+      "id": "video_d66",
+      "source": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频二_d66_YOLOv8逐帧智能分析_小目标增强版.mp4",
+      "output": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频二_d66_YOLOv8逐帧智能分析_小目标增强版_右侧SOP步骤面板版.mp4",
+      "frames": 2361,
+      "fps": 30.0,
+      "resolution": "1620×720",
+      "duration_s": 78.7
+    },
+    {
+      "id": "video_e344",
+      "source": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频三_e344_YOLOv8逐帧智能分析_小目标增强版.mp4",
+      "output": "E:\\宁波项目\\SOP分析平台_老板汇报版\\web\\media\\仪表板SOP_视频三_e344_YOLOv8逐帧智能分析_小目标增强版_右侧SOP步骤面板版.mp4",
+      "frames": 2320,
+      "fps": 30.0,
+      "resolution": "1620×720",
+      "duration_s": 77.33
+    }
+  ]
+}

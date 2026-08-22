@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "启动：宁波SOP分析平台",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/server.py",
+      "console": "integratedTerminal",
+      "python": "D:/Anaconda/envs/dl/python.exe"
+    },
+    {
+      "name": "重做：YOLOv8逐帧演示视频",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/process_sop_video.py",
+      "console": "integratedTerminal",
+      "python": "D:/Anaconda/envs/dl/python.exe"
+    },
+    {
+      "name": "重做：三视频右侧SOP步骤面板",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/render_right_sop_panel.py",
+      "console": "integratedTerminal",
+      "python": "D:/Anaconda/envs/dl/python.exe"
+    },
+    {
+      "name": "新增：两视频YOLOE26细粒度处理",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/process_frontier_two_videos.py",
+      "console": "integratedTerminal",
+      "python": "D:/Anaconda/envs/dl/python.exe"
+    },
+    {
+      "name": "精修：两视频大零件框并重绘",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/refine_frontier_boxes_and_rerender.py",
+      "console": "integratedTerminal",
+      "python": "D:/Anaconda/envs/dl/python.exe"
+    },
+    {
+      "name": "训练：YOLO26两视频蒸馏模型",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/train_yolo26_bootstrap.py",
+      "console": "integratedTerminal",
+      "python": "D:/Anaconda/envs/dl/python.exe"
+    },
+    {
+      "name": "输出：前沿算法中文可视化",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/build_frontier_visual_report.py",
+      "console": "integratedTerminal",
+      "python": "D:/Anaconda/envs/dl/python.exe"
+    }
+  ]
+}

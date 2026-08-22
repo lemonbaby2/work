@@ -1,0 +1,19 @@
+[Unit]
+Description=SOP 20260820 collaborative annotation version on port 8103
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/xjai/Desktop/sop_xjai_clean_export5/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版
+EnvironmentFile=/home/xjai/.config/sop-platform/collaborative-version.env
+Environment="PYTHONUNBUFFERED=1"
+Environment="SOP_HOST=0.0.0.0"
+Environment="SOP_PORT=8103"
+Environment="SOP_CAMERA_AUTOSTART=0"
+ExecStart=/home/xjai/micromamba/envs/sop/bin/python "/home/xjai/Desktop/sop_xjai_clean_export5/SOP分析平台_摄像头接入与低延迟标注增强版_20260819/SOP分析平台_老板汇报版/server.py"
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

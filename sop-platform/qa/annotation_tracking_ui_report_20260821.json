@@ -1,0 +1,17 @@
+{
+  "verified_at": "2026-08-21 12:30:00 UTC",
+  "overall": "PASS",
+  "tests": {
+    "cvat_local_recovery": "CVAT 2.73.1 UI and API returned HTTP 200; tasks 4 and 5 remained in interpolation/annotation mode",
+    "ai_box_delete": "AI prelabel deletion returned HTTP 200 and the deleted synthetic annotation no longer appeared",
+    "manual_box_delete": "Saved manual annotation was deleted with an audit tombstone",
+    "optical_flow_tracking": "A start-frame box followed target motion through subsequent frames; generated coordinates changed with video content",
+    "track_generation": "Generate-to-current-frame created editable boxes for the tracked frame range",
+    "track_delete": "Whole-track deletion removed all three generated boxes",
+    "canvas_move_resize": "Generated boxes could be moved and resized after tracking, including after page layout changes",
+    "playback": "Annotation video advanced 1.208 seconds from the play control",
+    "frame_jump_latency": "Cached frame restoration completed in 14.6 ms and the annotation API completed in 20.9 ms",
+    "browser_errors": 0
+  },
+  "truth_boundary": "Track boxes use video-content optical flow and remain editable; occlusion, abrupt cuts and low-texture targets still require human review and correction."
+}

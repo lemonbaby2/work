@@ -1,0 +1,62 @@
+{
+  "verified_at": "2026-08-21 12:48:00 UTC",
+  "host": {
+    "platform": "NVIDIA DGX Spark",
+    "gpu": "NVIDIA GB10",
+    "lan_url": "http://192.168.1.129:8096"
+  },
+  "overall": "PASS",
+  "start_all": {
+    "ok": true,
+    "camera_results": [true, true, true]
+  },
+  "cameras": [
+    {
+      "camera_id": 0,
+      "name": "Insta360 Link 2C",
+      "source": "http://127.0.0.1:18080/stream",
+      "running": true,
+      "jpeg_frames_in_3_seconds": 46,
+      "reconnects": 0,
+      "last_error": null
+    },
+    {
+      "camera_id": 1,
+      "name": "icSpring WebCamera",
+      "source": "/dev/v4l/by-id/usb-icSpring_WebCamera_20240603201703-video-index0",
+      "running": true,
+      "jpeg_frames_in_3_seconds": 46,
+      "reconnects": 0,
+      "last_error": null
+    },
+    {
+      "camera_id": 2,
+      "name": "Jieli USB Camera",
+      "source": "/dev/v4l/by-id/usb-Jieli_Technology_USB_Composite_Device-video-index0",
+      "running": true,
+      "jpeg_frames_in_3_seconds": 46,
+      "reconnects": 0,
+      "last_error": null
+    }
+  ],
+  "observed_performance": {
+    "output_fps_approx": 15,
+    "inference_ms_range": [4.7, 18.4],
+    "pipeline_ms_range": [9.4, 66.3],
+    "note": "Instantaneous values vary with concurrent camera and GPU load; production acceptance must measure P50/P95/P99 over the actual station workload."
+  },
+  "web_smoke_test": {
+    "authenticated_camera_tiles": 3,
+    "purchase_options": 4,
+    "post_auth_http_errors": 0,
+    "page_script_errors": 0,
+    "default_video_proxy_restored": true
+  },
+  "windows_client": {
+    "file": "SOP平台.exe",
+    "format": "PE32 GUI, Intel 80386, .NET Framework WinForms assembly",
+    "build": "PASS",
+    "windows_runtime_acceptance": "PENDING"
+  },
+  "production_release": "HOLD"
+}
