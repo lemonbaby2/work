@@ -1,0 +1,16 @@
+[Unit]
+Description=Public HTTPS tunnel for SOP tracking version on port 8102
+Wants=network-online.target
+After=network-online.target sop-version-tracking.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/curl --fail --silent --show-error --output /dev/null --max-time 10 http://127.0.0.1:8102/
+ExecStart=/usr/bin/ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes -o ExitOnForwardFailure=yes -R 80:127.0.0.1:8102 nokey@localhost.run
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

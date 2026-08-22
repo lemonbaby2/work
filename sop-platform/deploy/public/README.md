@@ -47,3 +47,16 @@ chmod +x deploy/public/start_quick_tunnel.sh
 `https://*.lhr.life` 是本次运行地址。关闭脚本后地址失效；
 它没有 Cloudflare Access 企业身份层，只可用于短期验收，正式生产仍使用固定域名、
 Caddy 或命名 Tunnel，并在外层增加企业身份验证。
+
+## 8102 轨迹版独立公网入口
+
+`sop-tracking-public-tunnel.service` 使用 localhost.run 的 HTTPS SSH 反向隧道，只转发
+`127.0.0.1:8102`，不修改或重启局域网站点。安装后可用以下命令查询当前公网地址：
+
+```bash
+./deploy/public/get_tracking_public_url.sh
+```
+
+免费匿名隧道在重连后可能更换域名，不应当作固定生产入口。需要固定地址时，使用
+Cloudflare Named Tunnel 与自有域名，并配置 Cloudflare Access。不要将 CVAT、数据库或其他
+历史端口同时暴露到公网。
